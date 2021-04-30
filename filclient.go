@@ -7,16 +7,15 @@ import (
 	"strings"
 	"time"
 
-	ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
-	"github.com/filecoin-project/go-commp-utils/writer"
-	"github.com/filecoin-project/go-commp-utils/zerocomm"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
 	dtnet "github.com/filecoin-project/go-data-transfer/network"
 	gst "github.com/filecoin-project/go-data-transfer/transport/graphsync"
+	commcid "github.com/filecoin-project/go-fil-commcid"
+	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
@@ -46,6 +45,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 
 	cborutil "github.com/filecoin-project/go-cbor-util"
@@ -357,46 +357,64 @@ func GeneratePieceCommitment(rt abi.RegisteredSealProof, payloadCid cid.Cid, bst
 		return cid.Undef, 0, err
 	}
 
-	commpWriter := &writer.Writer{}
-	err = preparedCar.Dump(commpWriter)
+	cp := new(commp.Calc)
+	err = preparedCar.Dump(cp)
 	if err != nil {
 		return cid.Undef, 0, err
 	}
 
-	dataCIDSize, err := commpWriter.Sum()
+	rawCommP, paddedSize, err := cp.Digest()
 	if err != nil {
 		return cid.Undef, 0, err
 	}
 
-	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
+	commCid, err := commcid.DataCommitmentV1ToCID(rawCommP)
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	return commCid, paddedSize.Unpadded(), nil
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
-
-	cur := c
-	for curSize < toSize {
-
-		zc := zerocomm.ZeroPieceCommitment(curSize)
-
-		p, err := ffi.GenerateUnsealedCID(abi.RegisteredSealProof_StackedDrg32GiBV1, []abi.PieceInfo{
-			abi.PieceInfo{
-				Size:     curSize.Padded(),
-				PieceCID: cur,
-			},
-			abi.PieceInfo{
-				Size:     curSize.Padded(),
-				PieceCID: zc,
-			},
-		})
-		if err != nil {
-			return cid.Undef, err
-		}
-
-		cur = p
-		curSize = curSize * 2
+	dmh, err := multihash.Decode(c.Hash())
+	if err != nil {
+		return cid.Undef, err
 	}
 
-	return cur, nil
+	rawCommP, err := commp.PadCommP(dmh.Digest, curSize.Padded(), toSize.Padded())
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	return commcid.DataCommitmentV1ToCID(rawCommP)
+
+	/*
+		cur := c
+		for curSize < toSize {
+
+			zc := zerocomm.ZeroPieceCommitment(curSize)
+
+			p, err := ffi.GenerateUnsealedCID(abi.RegisteredSealProof_StackedDrg32GiBV1, []abi.PieceInfo{
+				abi.PieceInfo{
+					Size:     curSize.Padded(),
+					PieceCID: cur,
+				},
+				abi.PieceInfo{
+					Size:     curSize.Padded(),
+					PieceCID: zc,
+				},
+			})
+			if err != nil {
+				return cid.Undef, err
+			}
+
+			cur = p
+			curSize = curSize * 2
+		}
+
+		return cur, nil
+	*/
 }
 
 func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {
