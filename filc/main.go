@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -20,7 +21,6 @@ import (
 	"github.com/ipfs/go-unixfs/importer"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
-	"github.com/whyrusleeping/estuary/lib/retrievehelper"
 )
 
 func main() {

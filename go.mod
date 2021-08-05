@@ -57,7 +57,6 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
-	github.com/whyrusleeping/estuary v0.0.0-20210804203656-30e44a24359a
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7
 	github.com/whyrusleeping/memo v0.0.0-20210319212142-d69afb686d15
 	go.opentelemetry.io/otel v0.18.0
