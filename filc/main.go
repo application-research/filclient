@@ -414,7 +414,7 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		if err := os.WriteFile(outputStr, dnode.RawData(), 0755); err != nil {
+		if err := os.WriteFile(outputStr, dnode.RawData(), 0644); err != nil {
 			return err
 		}
 
