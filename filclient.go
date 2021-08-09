@@ -3,6 +3,7 @@ package filclient
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
+	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
@@ -139,7 +141,13 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		// Called when a restart completes successfully
 		//OnRestartComplete func(id datatransfer.ChannelID)
 	})
-	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, dtRestartConfig)
+
+	cidlistsdirPath := filepath.Join(ddir, "cidlistsdir")
+	if err := os.MkdirAll(cidlistsdirPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to initialize cidlistsdir: %w", err)
+	}
+
+	mgr, err := dtimpl.NewDataTransfer(ds, cidlistsdirPath, dtn, tpt, dtRestartConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -438,6 +446,27 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 	}
 
 	return commCid, abi.PaddedPieceSize(size).Unpadded(), nil
+}
+
+func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+	cario := cario.NewCarIO()
+	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	commpWriter := &writer.Writer{}
+	err = preparedCar.Dump(commpWriter)
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	dataCIDSize, err := commpWriter.Sum()
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {

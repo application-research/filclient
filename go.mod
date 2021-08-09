@@ -31,6 +31,7 @@ require (
 	github.com/ipfs/go-graphsync v0.6.6
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
+	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-unixfs v0.2.4
