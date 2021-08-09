@@ -7,6 +7,7 @@ import (
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
+	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -520,12 +521,12 @@ Duration:      %v
 Average Speed: %v (%v/s)
 Peer:          %v
 `,
-		stats.Size, formatBytes(stats.Size),
+		stats.Size, humanize.IBytes(stats.Size),
 		stats.TotalPayment, types.FIL(stats.TotalPayment),
 		stats.AskPrice, types.FIL(stats.AskPrice),
 		stats.NumPayments,
 		stats.Duration,
-		stats.AverageSpeed, formatBytes(stats.AverageSpeed),
+		stats.AverageSpeed, humanize.IBytes(stats.AverageSpeed),
 		stats.Peer,
 	)
 }
@@ -570,54 +571,16 @@ Max Payment Interval Increase: %v (%v)
 `,
 		status,
 		pieceCIDFound,
-		query.Size, formatBytes(query.Size),
+		query.Size, humanize.IBytes(query.Size),
 		query.UnsealPrice, types.FIL(query.UnsealPrice),
 		query.MinPricePerByte, types.FIL(query.MinPricePerByte),
 		total, types.FIL(total),
 		query.PaymentAddress,
-		query.MaxPaymentInterval, formatBytes(query.MaxPaymentInterval),
-		query.MaxPaymentIntervalIncrease, formatBytes(query.MaxPaymentIntervalIncrease),
+		query.MaxPaymentInterval, humanize.IBytes(query.MaxPaymentInterval),
+		query.MaxPaymentIntervalIncrease, humanize.IBytes(query.MaxPaymentIntervalIncrease),
 	)
 
 	if query.Message != "" {
 		fmt.Printf("Message: %v\n", query.Message)
-	}
-}
-
-func formatBytes(count uint64) string {
-
-	exabyteIndex := uint64(6)
-
-	prefixIndex := uint64(0)
-	prefixMultiplier := uint64(1)
-	for count/prefixMultiplier >= 1024 && prefixIndex < exabyteIndex {
-		prefixIndex++
-		prefixMultiplier *= 1024
-	}
-
-	var unit string
-	switch prefixIndex {
-	case 0:
-		unit = "B"
-	case 1:
-		unit = "kiB"
-	case 2:
-		unit = "MiB"
-	case 3:
-		unit = "GiB"
-	case 4:
-		unit = "TiB"
-	case 5:
-		unit = "PiB"
-	default:
-		unit = "EiB"
-	}
-
-	if prefixIndex == 0 {
-		// If the size is in bytes, just print a whole number
-		return fmt.Sprintf("%d %s", count/prefixMultiplier, unit)
-	} else {
-		// Otherwise, print the number with its first decimal digit
-		return fmt.Sprintf("%d.%d %s", count/prefixMultiplier, (count+5)/(prefixMultiplier/10)%10, unit)
 	}
 }
