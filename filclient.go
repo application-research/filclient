@@ -208,7 +208,7 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 
 	mpid, err := fc.connectToMiner(ctx, maddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to miner: %s", err)
+		return nil, err
 	}
 
 	s, err := fc.host.NewStream(ctx, mpid, protocol)
@@ -219,22 +219,11 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 	return s, nil
 }
 
-type ApiError struct {
-	Under error
-}
-
-func (e *ApiError) Error() string {
-	return fmt.Sprintf("api error: %s", e.Under)
-}
-
-func (e *ApiError) Unwrap() error {
-	return e.Under
-}
-
+// Errors - ErrMinerConnectionFailed, ErrLotusError
 func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		return "", &ApiError{err}
+		return "", NewErrLotusError(err)
 	}
 
 	if minfo.PeerId == nil {
@@ -660,7 +649,7 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 
 	mpid, err := fc.connectToMiner(ctx, miner)
 	if err != nil {
-		return nil, fmt.Errorf("getting miner peer: %w", err)
+		return nil, err
 	}
 
 	voucher := &requestvalidation.StorageDataTransferVoucher{Proposal: propCid}
@@ -783,7 +772,7 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 		// try reconnecting
 		mpid, err := fc.connectToMiner(ctx, miner)
 		if err != nil {
-			return fmt.Errorf("failed to reconnect to miner: %w", err)
+			return err
 		}
 
 		if mpid != st.RemotePeer {
