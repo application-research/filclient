@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io/fs"
-	"strings"
 
 	"github.com/filecoin-project/go-address"
 	cli "github.com/urfave/cli/v2"
@@ -27,7 +26,7 @@ func parseMiner(cctx *cli.Context) (address.Address, error) {
 // Read a comma-separated list of miners from the CLI, erroring if none are
 // present.
 func parseMiners(cctx *cli.Context) ([]address.Address, error) {
-	minerStrings := strings.Split(cctx.String(flagMiner.Name), ",")
+	minerStrings := cctx.StringSlice(flagMiner.Name)
 
 	if len(minerStrings) == 0 {
 		return nil, fmt.Errorf("no miners were specified")

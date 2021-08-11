@@ -279,7 +279,7 @@ var retrieveFileCmd = &cli.Command{
 	Description: "Retrieve a file by CID from a miner. If desired, multiple miners can be specified as fallbacks in case of a failure (comma-separated, no spaces).",
 	ArgsUsage:   "<cid>",
 	Flags: []cli.Flag{
-		flagMinerRequired,
+		flagMinersRequired,
 		flagOutput,
 	},
 	Action: func(cctx *cli.Context) error {
