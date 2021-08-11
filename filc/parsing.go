@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/filecoin-project/go-address"
@@ -26,7 +27,7 @@ func readMiner(cctx *cli.Context) (address.Address, error) {
 // Read a comma-separated list of miners from the CLI, erroring if none are
 // present.
 func readMiners(cctx *cli.Context) ([]address.Address, error) {
-	minerStrings := strings.Split(cctx.String("miner"), ",")
+	minerStrings := strings.Split(cctx.String(flagMiner.Name), ",")
 
 	if len(minerStrings) == 0 {
 		return nil, fmt.Errorf("no miners were specified")
@@ -43,4 +44,22 @@ func readMiners(cctx *cli.Context) ([]address.Address, error) {
 	}
 
 	return miners, nil
+}
+
+// Get whether to use a verified deal or not.
+func readVerified(cctx *cli.Context) bool {
+	return cctx.Bool(flagVerified.Name)
+}
+
+// Get the destination file to write the output to, erroring if not a valid
+// path. This early error check is important because you don't want to do a
+// bunch of work, only to end up crashing when you try to write the file.
+func readOutput(cctx *cli.Context) (string, error) {
+	path := cctx.String(flagOutput.Name)
+
+	if !fs.ValidPath(path) {
+		return "", fmt.Errorf("invalid output location '%s'", path)
+	}
+
+	return path, nil
 }

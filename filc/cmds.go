@@ -38,12 +38,7 @@ var makeDealCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
-		mstr := cctx.String("miner")
-		if mstr == "" {
-			return fmt.Errorf("must specify miner to make deals with")
-		}
-
-		miner, err := address.NewFromString(mstr)
+		miner, err := readMiner(cctx)
 		if err != nil {
 			return err
 		}
@@ -86,7 +81,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		verified := cctx.Bool("verified")
+		verified := readVerified(cctx)
 
 		price := ask.Ask.Ask.Price
 		if verified {
@@ -298,9 +293,9 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		outputStr := cctx.String("output")
-		if outputStr == "" {
-			outputStr = cidStr
+		output, err := readOutput(cctx)
+		if err != nil {
+			return err
 		}
 
 		c, err := cid.Decode(cidStr)
@@ -352,14 +347,14 @@ var retrieveFileCmd = &cli.Command{
 				continue
 			}
 
-			if err := os.WriteFile(outputStr, dnode.RawData(), 0644); err != nil {
+			if err := os.WriteFile(output, dnode.RawData(), 0644); err != nil {
 				fmt.Println(err)
 				continue
 			}
 
 			printRetrievalStats(stats)
 
-			fmt.Println("Saved output to", outputStr)
+			fmt.Println("Saved output to", output)
 
 			// If we completed the full retrieval without any problems, we're
 			// done, so return immediately without trying any other miners
@@ -385,17 +380,12 @@ var queryRetrievalCmd = &cli.Command{
 			return fmt.Errorf("please specify a CID to query retrieval of")
 		}
 
-		minerStr := cctx.String("miner")
-		if minerStr == "" {
-			return fmt.Errorf("must specify a miner with --miner")
-		}
-
-		cid, err := cid.Decode(cidStr)
+		miner, err := readMiner(cctx)
 		if err != nil {
 			return err
 		}
 
-		miner, err := address.NewFromString(minerStr)
+		cid, err := cid.Decode(cidStr)
 		if err != nil {
 			return err
 		}
