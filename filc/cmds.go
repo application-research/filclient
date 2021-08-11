@@ -38,7 +38,7 @@ var makeDealCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
-		miner, err := readMiner(cctx)
+		miner, err := parseMiner(cctx)
 		if err != nil {
 			return err
 		}
@@ -81,7 +81,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		verified := readVerified(cctx)
+		verified := parseVerified(cctx)
 
 		price := ask.Ask.Ask.Price
 		if verified {
@@ -288,12 +288,12 @@ var retrieveFileCmd = &cli.Command{
 			return fmt.Errorf("please specify a CID to retrieve")
 		}
 
-		miners, err := readMiners(cctx)
+		miners, err := parseMiners(cctx)
 		if err != nil {
 			return err
 		}
 
-		output, err := readOutput(cctx)
+		output, err := parseOutput(cctx)
 		if err != nil {
 			return err
 		}
@@ -380,7 +380,7 @@ var queryRetrievalCmd = &cli.Command{
 			return fmt.Errorf("please specify a CID to query retrieval of")
 		}
 
-		miner, err := readMiner(cctx)
+		miner, err := parseMiner(cctx)
 		if err != nil {
 			return err
 		}

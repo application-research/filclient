@@ -11,8 +11,8 @@ import (
 
 // Read a single miner from the CLI, erroring if more than one is specified, or
 // none are present.
-func readMiner(cctx *cli.Context) (address.Address, error) {
-	miners, err := readMiners(cctx)
+func parseMiner(cctx *cli.Context) (address.Address, error) {
+	miners, err := parseMiners(cctx)
 	if err != nil {
 		return address.Undef, err
 	}
@@ -26,7 +26,7 @@ func readMiner(cctx *cli.Context) (address.Address, error) {
 
 // Read a comma-separated list of miners from the CLI, erroring if none are
 // present.
-func readMiners(cctx *cli.Context) ([]address.Address, error) {
+func parseMiners(cctx *cli.Context) ([]address.Address, error) {
 	minerStrings := strings.Split(cctx.String(flagMiner.Name), ",")
 
 	if len(minerStrings) == 0 {
@@ -47,14 +47,14 @@ func readMiners(cctx *cli.Context) ([]address.Address, error) {
 }
 
 // Get whether to use a verified deal or not.
-func readVerified(cctx *cli.Context) bool {
+func parseVerified(cctx *cli.Context) bool {
 	return cctx.Bool(flagVerified.Name)
 }
 
 // Get the destination file to write the output to, erroring if not a valid
 // path. This early error check is important because you don't want to do a
 // bunch of work, only to end up crashing when you try to write the file.
-func readOutput(cctx *cli.Context) (string, error) {
+func parseOutput(cctx *cli.Context) (string, error) {
 	path := cctx.String(flagOutput.Name)
 
 	if !fs.ValidPath(path) {
