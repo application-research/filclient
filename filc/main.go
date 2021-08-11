@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/application-research/filclient"
@@ -74,7 +75,7 @@ func main() {
 	}
 }
 
-// Get config directory from CLI metadata
+// Get config directory from CLI metadata.
 func ddir(cctx *cli.Context) string {
 	mDdir := cctx.App.Metadata["ddir"]
 	switch ddir := mDdir.(type) {
@@ -85,17 +86,83 @@ func ddir(cctx *cli.Context) string {
 	}
 }
 
+// Read a single miner from the CLI, erroring if more than one is specified, or
+// none are present.
+func readMiner(cctx *cli.Context) (address.Address, error) {
+	miners, err := readMiners(cctx)
+	if err != nil {
+		return address.Undef, err
+	}
+
+	if len(miners) > 1 {
+		return address.Undef, fmt.Errorf("only one miner expected")
+	}
+
+	return miners[0], nil
+}
+
+// Read a comma-separated list of miners from the CLI, erroring if none are
+// present.
+func readMiners(cctx *cli.Context) ([]address.Address, error) {
+	minerStrings := strings.Split(cctx.String("miner"), ",")
+
+	if len(minerStrings) == 0 {
+		return nil, fmt.Errorf("no miners were specified")
+	}
+
+	miners := make([]address.Address, len(minerStrings))
+	for i, ms := range minerStrings {
+		miner, err := address.NewFromString(ms)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse miner %s: %w", ms, err)
+		}
+
+		miners[i] = miner
+	}
+
+	return miners, nil
+}
+
+func flagMiner() *cli.StringFlag {
+	flag := &cli.StringFlag{
+		Name:    "miner",
+		Aliases: []string{"miners", "m"},
+	}
+
+	return flag
+}
+
+func flagMinerRequired() *cli.StringFlag {
+	flag := flagMiner()
+	flag.Required = true
+
+	return flag
+}
+
+func flagVerified() *cli.BoolFlag {
+	flag := &cli.BoolFlag{
+		Name: "verified",
+	}
+
+	return flag
+}
+
+func flagOutput() *cli.PathFlag {
+	flag := &cli.PathFlag{
+		Name:    "output",
+		Aliases: []string{"o"},
+	}
+
+	return flag
+}
+
 var makeDealCmd = &cli.Command{
 	Name:      "deal",
 	Usage:     "Make a storage deal with a miner",
 	ArgsUsage: "<file path>",
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name: "miner",
-		},
-		&cli.BoolFlag{
-			Name: "verified",
-		},
+		flagMinerRequired(),
+		flagVerified(),
 	},
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
@@ -345,12 +412,13 @@ var listDealsCmd = &cli.Command{
 }
 
 var retrieveFileCmd = &cli.Command{
-	Name:      "retrieve",
-	Usage:     "Retrieve a file by CID from a miner",
-	ArgsUsage: "<cid>",
+	Name:        "retrieve",
+	Usage:       "Retrieve a file by CID from a miner",
+	Description: "Retrieve a file by CID from a miner. If desired, multiple miners can be specified as fallbacks in case of a failure (comma-separated, no spaces).",
+	ArgsUsage:   "<cid>",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
-		&cli.StringFlag{Name: "output", Aliases: []string{"o"}},
+		flagMinerRequired(),
+		flagOutput(),
 	},
 	Action: func(cctx *cli.Context) error {
 		cidStr := cctx.Args().First()
@@ -358,9 +426,9 @@ var retrieveFileCmd = &cli.Command{
 			return fmt.Errorf("please specify a CID to retrieve")
 		}
 
-		minerStr := cctx.String("miner")
-		if minerStr == "" {
-			return fmt.Errorf("must specify a miner with --miner")
+		miners, err := readMiners(cctx)
+		if err != nil {
+			return err
 		}
 
 		outputStr := cctx.String("output")
@@ -369,11 +437,6 @@ var retrieveFileCmd = &cli.Command{
 		}
 
 		c, err := cid.Decode(cidStr)
-		if err != nil {
-			return err
-		}
-
-		miner, err := address.NewFromString(minerStr)
 		if err != nil {
 			return err
 		}
@@ -391,38 +454,53 @@ var retrieveFileCmd = &cli.Command{
 		}
 		defer closer()
 
-		ask, err := fc.RetrievalQuery(cctx.Context, miner, c)
-		if err != nil {
-			return err
+		// Attempt the file retrieval from each miner
+		for _, miner := range miners {
+			fmt.Println("attempting retrieval with miner", miner)
+
+			ask, err := fc.RetrievalQuery(cctx.Context, miner, c)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			bserv := blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore))
+			dserv := merkledag.NewDAGService(bserv)
+
+			dnode, err := dserv.Get(cctx.Context, c)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			if err := os.WriteFile(outputStr, dnode.RawData(), 0644); err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			printRetrievalStats(stats)
+
+			fmt.Println("Saved output to", outputStr)
+
+			// If we completed the full retrieval without any problems, we're
+			// done, so return immediately without trying any other miners
+			return nil
 		}
 
-		proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
-		if err != nil {
-			return err
-		}
-
-		stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
-		if err != nil {
-			return err
-		}
-
-		bserv := blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore))
-		dserv := merkledag.NewDAGService(bserv)
-
-		dnode, err := dserv.Get(cctx.Context, c)
-		if err != nil {
-			return err
-		}
-
-		if err := os.WriteFile(outputStr, dnode.RawData(), 0644); err != nil {
-			return err
-		}
-
-		printRetrievalStats(stats)
-
-		fmt.Println("Saved output to", outputStr)
-
-		return nil
+		// If we fell out of that loop, it means none of the miners worked
+		return fmt.Errorf("retrieval failed for all miners")
 	},
 }
 
