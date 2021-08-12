@@ -2,20 +2,22 @@ package filclient
 
 import "fmt"
 
+type ErrorCode int
+
 const (
 	// Failed to connect to a miner.
-	ErrMinerConnectionFailed = iota
+	ErrMinerConnectionFailed ErrorCode = iota
 
 	// There was an issue related to the Lotus API.
 	ErrLotusError
 )
 
 type Error struct {
-	Code  int
+	Code  ErrorCode
 	Inner error
 }
 
-func ErrorString(code int) string {
+func (code ErrorCode) String() string {
 	var msg string
 
 	switch code {
@@ -31,14 +33,14 @@ func ErrorString(code int) string {
 }
 
 func (err *Error) Error() string {
-	return fmt.Sprintf("%v: %v", ErrorString(err.Code), err.Inner.Error())
+	return fmt.Sprintf("%v: %v", err.Code.String(), err.Inner.Error())
 }
 
 func (err *Error) Unwrap() error {
 	return err.Inner
 }
 
-func NewError(code int, err error) *Error {
+func NewError(code ErrorCode, err error) *Error {
 	return &Error{
 		Code:  code,
 		Inner: err,
