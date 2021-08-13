@@ -5,8 +5,10 @@ import "fmt"
 type ErrorCode int
 
 const (
+	ErrUnknown ErrorCode = iota
+
 	// Failed to connect to a miner.
-	ErrMinerConnectionFailed ErrorCode = iota
+	ErrMinerConnectionFailed
 
 	// There was an issue related to the Lotus API.
 	ErrLotusError
@@ -21,6 +23,8 @@ func (code ErrorCode) String() string {
 	var msg string
 
 	switch code {
+	case ErrUnknown:
+		msg = "unknown"
 	case ErrMinerConnectionFailed:
 		msg = "miner connection failed"
 	case ErrLotusError:
@@ -45,6 +49,10 @@ func NewError(code ErrorCode, err error) *Error {
 		Code:  code,
 		Inner: err,
 	}
+}
+
+func NewErrUnknown(err error) error {
+	return NewError(ErrUnknown, err)
 }
 
 func NewErrMinerConnectionFailed(err error) error {
