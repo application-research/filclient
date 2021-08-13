@@ -2,47 +2,53 @@ package filclient
 
 import "fmt"
 
+type ErrorCode int
+
 const (
+	ErrUnknown ErrorCode = iota
+
 	// Failed to connect to a miner.
-	ErrMinerConnectionFailed = iota
+	ErrMinerConnectionFailed
 
 	// There was an issue related to the Lotus API.
 	ErrLotusError
 )
 
 type Error struct {
-	Code  int
+	Code  ErrorCode
 	Inner error
 }
 
-func ErrorString(code int) string {
-	var msg string
-
+func (code ErrorCode) String() string {
 	switch code {
+	case ErrUnknown:
+		return "unknown"
 	case ErrMinerConnectionFailed:
-		msg = "miner connection failed"
+		return "miner connection failed"
 	case ErrLotusError:
-		msg = "lotus error"
+		return "lotus error"
 	default:
-		msg = "(invalid error code)"
+		return "(invalid error code)"
 	}
-
-	return msg
 }
 
 func (err *Error) Error() string {
-	return fmt.Sprintf("%v: %v", ErrorString(err.Code), err.Inner.Error())
+	return fmt.Sprintf("%s: %s", err.Code, err.Inner)
 }
 
 func (err *Error) Unwrap() error {
 	return err.Inner
 }
 
-func NewError(code int, err error) *Error {
+func NewError(code ErrorCode, err error) *Error {
 	return &Error{
 		Code:  code,
 		Inner: err,
 	}
+}
+
+func NewErrUnknown(err error) error {
+	return NewError(ErrUnknown, err)
 }
 
 func NewErrMinerConnectionFailed(err error) error {
