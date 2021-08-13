@@ -33,7 +33,7 @@ func (code ErrorCode) String() string {
 }
 
 func (err *Error) Error() string {
-	return fmt.Sprintf("%v: %v", err.Code.String(), err.Inner.Error())
+	return fmt.Sprintf("%s: %s", err.Code, err.Inner)
 }
 
 func (err *Error) Unwrap() error {
