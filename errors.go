@@ -20,20 +20,16 @@ type Error struct {
 }
 
 func (code ErrorCode) String() string {
-	var msg string
-
 	switch code {
 	case ErrUnknown:
-		msg = "unknown"
+		return "unknown"
 	case ErrMinerConnectionFailed:
-		msg = "miner connection failed"
+		return "miner connection failed"
 	case ErrLotusError:
-		msg = "lotus error"
+		return "lotus error"
 	default:
-		msg = "(invalid error code)"
+		return "(invalid error code)"
 	}
-
-	return msg
 }
 
 func (err *Error) Error() string {
