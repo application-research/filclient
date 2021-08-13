@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/fs"
+	"strings"
 
 	"github.com/filecoin-project/go-address"
 	cli "github.com/urfave/cli/v2"
@@ -26,20 +27,27 @@ func parseMiner(cctx *cli.Context) (address.Address, error) {
 // Read a comma-separated list of miners from the CLI, erroring if none are
 // present.
 func parseMiners(cctx *cli.Context) ([]address.Address, error) {
-	minerStrings := cctx.StringSlice(flagMiner.Name)
-
-	if len(minerStrings) == 0 {
+	// Each minerStringsRaw element may contain multiple comma-separated values
+	minerStringsRaw := cctx.StringSlice(flagMiner.Name)
+	if len(minerStringsRaw) == 0 {
 		return nil, fmt.Errorf("no miners were specified")
 	}
 
-	miners := make([]address.Address, len(minerStrings))
-	for i, ms := range minerStrings {
+	// Split any comma-separated minerStringsRaw elements
+	var minerStrings []string
+	for _, raw := range minerStringsRaw {
+		minerStrings = append(minerStrings, strings.Split(raw, ",")...)
+	}
+
+	var miners []address.Address
+	for _, ms := range minerStrings {
+
 		miner, err := address.NewFromString(ms)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse miner %s: %w", ms, err)
 		}
 
-		miners[i] = miner
+		miners = append(miners, miner)
 	}
 
 	return miners, nil
