@@ -223,18 +223,18 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		return "", NewErrLotusError(err)
+		return "", NewErrMinerConnectionFailed(NewErrLotusError(err))
 	}
 
 	if minfo.PeerId == nil {
-		return "", fmt.Errorf("miner %s has no peer ID set", maddr)
+		return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no peer ID set", maddr))
 	}
 
 	var maddrs []multiaddr.Multiaddr
 	for _, mma := range minfo.Multiaddrs {
 		ma, err := multiaddr.NewMultiaddrBytes(mma)
 		if err != nil {
-			return "", fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err)
+			return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err))
 		}
 		maddrs = append(maddrs, ma)
 	}
@@ -243,7 +243,7 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
 	}); err != nil {
-		return "", err
+		return "", NewErrMinerConnectionFailed(err)
 	}
 
 	return *minfo.PeerId, nil
