@@ -223,7 +223,7 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		return "", NewErrMinerConnectionFailed(NewErrLotusError(err))
+		return "", NewErrLotusError(err)
 	}
 
 	if minfo.PeerId == nil {
