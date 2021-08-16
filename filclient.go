@@ -473,6 +473,12 @@ func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi
 }
 
 func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {
+	ctx, span := Tracer.Start(ctx, "dealStatus", trace.WithAttributes(
+		attribute.Stringer("miner", maddr),
+		attribute.Stringer("propcid", propCid),
+	))
+	defer span.End()
+
 	cidb, err := cborutil.Dump(propCid)
 	if err != nil {
 		return nil, err
