@@ -28,7 +28,7 @@ var flagVerified = &cli.BoolFlag{
 	Name: "verified",
 }
 
-var flagOutput = &cli.PathFlag{
+var flagOutput = &cli.StringFlag{
 	Name:    "output",
 	Aliases: []string{"o"},
 }

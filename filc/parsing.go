@@ -12,23 +12,21 @@ import (
 // Read a single miner from the CLI, erroring if more than one is specified, or
 // none are present.
 func parseMiner(cctx *cli.Context) (address.Address, error) {
-	miners, err := parseMiners(cctx)
+	minerStringRaw := cctx.String(flagMiner.Name)
+
+	miner, err := address.NewFromString(minerStringRaw)
 	if err != nil {
-		return address.Undef, err
+		return address.Undef, fmt.Errorf("failed to parse miner: %s: %w", minerStringRaw, err)
 	}
 
-	if len(miners) > 1 {
-		return address.Undef, fmt.Errorf("only one miner expected")
-	}
-
-	return miners[0], nil
+	return miner, nil
 }
 
 // Read a comma-separated list of miners from the CLI, erroring if none are
 // present.
 func parseMiners(cctx *cli.Context) ([]address.Address, error) {
 	// Each minerStringsRaw element may contain multiple comma-separated values
-	minerStringsRaw := cctx.StringSlice(flagMiner.Name)
+	minerStringsRaw := cctx.StringSlice(flagMiners.Name)
 	if len(minerStringsRaw) == 0 {
 		return nil, fmt.Errorf("no miners were specified")
 	}
@@ -64,7 +62,7 @@ func parseVerified(cctx *cli.Context) bool {
 func parseOutput(cctx *cli.Context) (string, error) {
 	path := cctx.String(flagOutput.Name)
 
-	if !fs.ValidPath(path) {
+	if path != "" && !fs.ValidPath(path) {
 		return "", fmt.Errorf("invalid output location '%s'", path)
 	}
 
