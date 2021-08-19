@@ -16,7 +16,7 @@ require (
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.6.2
-	github.com/filecoin-project/go-state-types v0.1.1-0.20210722133031-ad9bfe54c124
+	github.com/filecoin-project/go-state-types v0.1.1-0.20210810190654-139e0e79e69e
 	github.com/filecoin-project/lotus v1.10.1
 	github.com/filecoin-project/specs-actors v0.9.14
 	github.com/go-ole/go-ole v1.2.5 // indirect
