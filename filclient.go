@@ -115,6 +115,8 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		storeutil.LoaderForBlockstore(bs),
 		storeutil.StorerForBlockstore(bs),
 		graphsync.MaxInProgressRequests(200),
+		graphsync.MaxMemoryResponder(8<<30),
+		graphsync.MaxMemoryPerPeerResponser(256<<20),
 	)
 
 	tpt := gst.NewTransport(h.ID(), gse)
