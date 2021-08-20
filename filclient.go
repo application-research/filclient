@@ -133,7 +133,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		CompleteTimeout:        time.Second * 90,
 		*/
 
-		AcceptTimeout:          time.Minute * 30,
+		AcceptTimeout:          time.Hour * 24,
 		RestartDebounce:        time.Second * 10,
 		RestartBackoff:         time.Second * 20,
 		MaxConsecutiveRestarts: 15,
