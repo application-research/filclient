@@ -115,6 +115,8 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		storeutil.LoaderForBlockstore(bs),
 		storeutil.StorerForBlockstore(bs),
 		graphsync.MaxInProgressRequests(200),
+		graphsync.MaxMemoryResponder(8<<30),
+		graphsync.MaxMemoryPerPeerResponder(256<<20),
 	)
 
 	tpt := gst.NewTransport(h.ID(), gse)
@@ -131,7 +133,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		CompleteTimeout:        time.Second * 90,
 		*/
 
-		AcceptTimeout:          time.Minute * 30,
+		AcceptTimeout:          time.Hour * 24,
 		RestartDebounce:        time.Second * 10,
 		RestartBackoff:         time.Second * 20,
 		MaxConsecutiveRestarts: 15,
