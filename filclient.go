@@ -894,7 +894,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	}
 
 	var chanid datatransfer.ChannelID
-	var chanidMu sync.Mutex
+	var chanidLk sync.Mutex
 
 	// Set up incoming events handler
 
@@ -917,12 +917,12 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
-		chanidMu.Lock()
-		chanidLk := chanid
-		chanidMu.Unlock()
+		chanidLk.Lock()
+		chanidCopy := chanid
+		chanidLk.Unlock()
 
 		// Skip all events that aren't related to this channel
-		if state.ChannelID() != chanidLk {
+		if state.ChannelID() != chanidCopy {
 			return
 		}
 
@@ -954,7 +954,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 						finish(fmt.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall))
 					}
 
-					if err := fc.dataTransfer.SendVoucher(ctx, chanidLk, &retrievalmarket.DealPayment{
+					if err := fc.dataTransfer.SendVoucher(ctx, chanidCopy, &retrievalmarket.DealPayment{
 						ID:             proposal.ID,
 						PaymentChannel: pchAddr,
 						PaymentVoucher: vres.Voucher,
@@ -989,9 +989,9 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	defer unsubscribe()
 
 	// Submit the retrieval deal proposal to the miner
-	chanidMu.Lock()
+	chanidLk.Lock()
 	chanid, err = fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
-	chanidMu.Unlock()
+	chanidLk.Unlock()
 	if err != nil {
 		return nil, err
 	}
