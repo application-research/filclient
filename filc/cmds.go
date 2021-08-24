@@ -297,6 +297,9 @@ var retrieveFileCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
+		if output == "" {
+			output = cidStr
+		}
 
 		c, err := cid.Decode(cidStr)
 		if err != nil {
@@ -347,14 +350,13 @@ var retrieveFileCmd = &cli.Command{
 				continue
 			}
 
+			fmt.Println("Saving output to", output)
 			if err := os.WriteFile(output, dnode.RawData(), 0644); err != nil {
 				fmt.Println(err)
 				continue
 			}
 
 			printRetrievalStats(stats)
-
-			fmt.Println("Saved output to", output)
 
 			// If we completed the full retrieval without any problems, we're
 			// done, so return immediately without trying any other miners
