@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
 	"github.com/filecoin-project/go-commp-utils/writer"
@@ -883,14 +884,19 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		return nil, err
 	}
 
-	// Get the payment channel and create a lane for this retrieval
-	pchAddr, err := fc.getPaychWithMinFunds(ctx, minerOwner)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get payment channel: %w", err)
-	}
-	pchLane, err := fc.pchmgr.AllocateLane(pchAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to allocate lane: %w", err)
+	pchRequired := !proposal.PricePerByte.IsZero() || !proposal.UnsealPrice.IsZero()
+	var pchAddr address.Address
+	var pchLane uint64
+	if pchRequired {
+		// Get the payment channel and create a lane for this retrieval
+		pchAddr, err = fc.getPaychWithMinFunds(ctx, minerOwner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get payment channel: %w", err)
+		}
+		pchLane, err = fc.pchmgr.AllocateLane(pchAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate lane: %w", err)
+		}
 	}
 
 	var chanid datatransfer.ChannelID
@@ -936,33 +942,37 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded:
-					log.Infof("sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
+					if pchRequired {
+						log.Infof("sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
 
-					totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
+						totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
 
-					vres, err := fc.pchmgr.CreateVoucher(ctx, pchAddr, paych.SignedVoucher{
-						ChannelAddr: pchAddr,
-						Lane:        pchLane,
-						Nonce:       nonce,
-						Amount:      totalPayment,
-					})
-					if err != nil {
-						finish(err)
+						vres, err := fc.pchmgr.CreateVoucher(ctx, pchAddr, paych.SignedVoucher{
+							ChannelAddr: pchAddr,
+							Lane:        pchLane,
+							Nonce:       nonce,
+							Amount:      totalPayment,
+						})
+						if err != nil {
+							finish(err)
+						}
+
+						if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
+							finish(fmt.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall))
+						}
+
+						if err := fc.dataTransfer.SendVoucher(ctx, chanidCopy, &retrievalmarket.DealPayment{
+							ID:             proposal.ID,
+							PaymentChannel: pchAddr,
+							PaymentVoucher: vres.Voucher,
+						}); err != nil {
+							finish(fmt.Errorf("failed to send payment voucher: %w", err))
+						}
+
+						nonce++
+					} else {
+						finish(fmt.Errorf("the miner requested payment even though this transaction was determined to be zero cost"))
 					}
-
-					if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
-						finish(fmt.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall))
-					}
-
-					if err := fc.dataTransfer.SendVoucher(ctx, chanidCopy, &retrievalmarket.DealPayment{
-						ID:             proposal.ID,
-						PaymentChannel: pchAddr,
-						PaymentVoucher: vres.Voucher,
-					}); err != nil {
-						finish(fmt.Errorf("failed to send payment voucher: %w", err))
-					}
-
-					nonce++
 				case retrievalmarket.DealStatusFundsNeededUnseal:
 					finish(fmt.Errorf("received unexpected payment request for unsealing data"))
 				default:
@@ -973,7 +983,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 			}
 		case datatransfer.DataReceivedProgress:
 			if fc.RetrievalProgressLogging && time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
-				fmt.Printf("received: %v\r", state.Received())
+				fmt.Printf("received: %v (%v)\r", state.Received(), humanize.IBytes(state.Received()))
 				lastReceivedUpdate = time.Now()
 			}
 		case datatransfer.DataReceived:
