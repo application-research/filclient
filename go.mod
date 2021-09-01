@@ -59,6 +59,4 @@ require (
 
 replace github.com/libp2p/go-libp2p-yamux => github.com/libp2p/go-libp2p-yamux v0.5.1
 
-replace github.com/filecoin-project/lotus => ../lotus
-
-replace github.com/filecoin-project/filecoin-ffi => ../lotus/extern/filecoin-ffi
+replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
