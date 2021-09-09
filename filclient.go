@@ -11,7 +11,6 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
-	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
 	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
@@ -43,6 +42,7 @@ import (
 	storeutil "github.com/ipfs/go-graphsync/storeutil"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
+	car "github.com/ipld/go-car"
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -113,8 +113,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 
 	gse := graphsync.New(context.Background(),
 		gsnet.NewFromLibp2pHost(h),
-		storeutil.LoaderForBlockstore(bs),
-		storeutil.StorerForBlockstore(bs),
+		storeutil.LinkSystemForBlockstore(bs),
 		graphsync.MaxInProgressRequests(200),
 		graphsync.MaxMemoryResponder(8<<30),
 		graphsync.MaxMemoryPerPeerResponder(256<<20),
@@ -415,8 +414,8 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 }
 
 func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
-	cario := cario.NewCarIO()
-	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
+	selectiveCar := car.NewSelectiveCar(context.Background(), bstore, []car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}})
+	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
 		return cid.Undef, 0, err
 	}
@@ -441,8 +440,8 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 }
 
 func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
-	cario := cario.NewCarIO()
-	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
+	selectiveCar := car.NewSelectiveCar(context.Background(), bstore, []car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}})
+	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
 		return cid.Undef, 0, err
 	}
