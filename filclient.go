@@ -113,8 +113,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 
 	gse := graphsync.New(context.Background(),
 		gsnet.NewFromLibp2pHost(h),
-		storeutil.LoaderForBlockstore(bs),
-		storeutil.StorerForBlockstore(bs),
+		storeutil.LinkSystemForBlockstore(bs),
 		graphsync.MaxInProgressRequests(200),
 		graphsync.MaxMemoryResponder(8<<30),
 		graphsync.MaxMemoryPerPeerResponder(256<<20),
