@@ -16,7 +16,6 @@ require (
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.12.0
-	github.com/filecoin-project/go-multistore v0.0.4-0.20210601185713-428a2691a567 // indirect
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210810190654-139e0e79e69e
 	github.com/filecoin-project/lotus v1.10.1
 	github.com/filecoin-project/specs-actors v0.9.14
@@ -36,6 +35,7 @@ require (
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-unixfs v0.2.6
+	github.com/ipld/go-car v0.3.1-0.20210601190600-f512dac51e8e
 	github.com/ipld/go-ipld-prime v0.12.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/libp2p/go-libp2p v0.14.2
