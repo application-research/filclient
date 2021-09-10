@@ -17,7 +17,9 @@ import (
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	files "github.com/ipfs/go-ipfs-files"
 	"github.com/ipfs/go-merkledag"
+	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
@@ -301,7 +303,7 @@ var retrieveFileCmd = &cli.Command{
 			output = cidStr
 		}
 
-		c, err := cid.Decode(cidStr)
+		root, err := cid.Decode(cidStr)
 		if err != nil {
 			return err
 		}
@@ -320,16 +322,18 @@ var retrieveFileCmd = &cli.Command{
 		defer closer()
 
 		// Attempt the file retrieval from each miner
+		var retrievalDone bool
 		for _, miner := range miners {
-			fmt.Println("attempting retrieval with miner", miner)
+			msg := fmt.Sprintf("attempting retrieval with miner %s => root %s", miner, root)
+			fmt.Println(msg)
 
-			ask, err := fc.RetrievalQuery(cctx.Context, miner, c)
+			ask, err := fc.RetrievalQuery(cctx.Context, miner, root)
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
 
-			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
+			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, nil)
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -341,30 +345,31 @@ var retrieveFileCmd = &cli.Command{
 				continue
 			}
 
-			bserv := blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore))
-			dserv := merkledag.NewDAGService(bserv)
-
-			dnode, err := dserv.Get(cctx.Context, c)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			fmt.Println("Saving output to", output)
-			if err := os.WriteFile(output, dnode.RawData(), 0644); err != nil {
-				fmt.Println(err)
-				continue
-			}
-
 			printRetrievalStats(stats)
-
-			// If we completed the full retrieval without any problems, we're
-			// done, so return immediately without trying any other miners
-			return nil
+			retrievalDone = true
+			break
 		}
 
-		// If we fell out of that loop, it means none of the miners worked
-		return fmt.Errorf("retrieval failed for all miners")
+		if !retrievalDone {
+			// none of the miners worked
+			return xerrors.New("retrieval failed for all miners")
+		}
+
+		fmt.Println("Saving output to ", output)
+
+		dserv := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
+
+		dnode, err := dserv.Get(cctx.Context, root)
+		if err != nil {
+			return err
+		}
+
+		ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dserv, dnode)
+		if err != nil {
+			return err
+		}
+
+		return files.WriteTo(ufsFile, output)
 	},
 }
 
