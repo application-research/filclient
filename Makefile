@@ -25,6 +25,7 @@ FFI_DEPS:=$(addprefix $(FFI_PATH),$(FFI_DEPS))
 $(FFI_DEPS): build/.filecoin-install ;
 
 build/.filecoin-install: $(FFI_PATH)
+	@mkdir -p build
 	$(MAKE) -C $(FFI_PATH) $(FFI_DEPS:$(FFI_PATH)%=%)
 	@touch $@
 
@@ -42,6 +43,7 @@ $(MODULES): build/.update-modules ;
 # dummy file that marks the last time modules were updated
 build/.update-modules:
 	git submodule update --init --recursive
+	@mkdir -p build
 	touch $@
 
 CLEAN+=build/.update-modules
