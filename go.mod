@@ -8,16 +8,16 @@ require (
 	github.com/OneOfOne/xxhash v1.2.5 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/dustin/go-humanize v1.0.0
-	github.com/filecoin-project/go-address v0.0.5
+	github.com/filecoin-project/go-address v0.0.6
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
-	github.com/filecoin-project/go-commp-utils v0.1.1-0.20210427191551-70bf140d31c7
+	github.com/filecoin-project/go-commp-utils v0.1.2
 	github.com/filecoin-project/go-data-transfer v1.10.1
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.12.0
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210810190654-139e0e79e69e
-	github.com/filecoin-project/lotus v1.10.1
+	github.com/filecoin-project/lotus v1.11.3-rc1
 	github.com/filecoin-project/specs-actors v0.9.14
 	github.com/go-ole/go-ole v1.2.5 // indirect
 	github.com/golang/snappy v0.0.2 // indirect
@@ -59,6 +59,4 @@ require (
 
 replace github.com/libp2p/go-libp2p-yamux => github.com/libp2p/go-libp2p-yamux v0.5.1
 
-replace github.com/filecoin-project/lotus => ../lotus
-
-replace github.com/filecoin-project/filecoin-ffi => ../lotus/extern/filecoin-ffi
+replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
