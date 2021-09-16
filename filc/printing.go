@@ -49,7 +49,7 @@ Peer:          %v
 	)
 }
 
-func printQueryResponse(query *retrievalmarket.QueryResponse) {
+func printQueryResponse(query *retrievalmarket.QueryResponse, availableOnIPFS bool) {
 	var status string
 	switch query.Status {
 	case retrievalmarket.QueryResponseAvailable:
@@ -100,5 +100,9 @@ Max Payment Interval Increase: %v (%v)
 
 	if query.Message != "" {
 		fmt.Printf("Message: %v\n", query.Message)
+	}
+
+	if availableOnIPFS {
+		fmt.Printf("-----\nAvaiable on IPFS")
 	}
 }

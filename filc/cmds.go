@@ -21,6 +21,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -399,7 +400,12 @@ var queryRetrievalCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
-		fc, closer, err := getClient(cctx, ddir)
+		nd, err := setup(cctx.Context, ddir)
+		if err != nil {
+			return err
+		}
+
+		fc, closer, err := clientFromNode(cctx, nd, ddir)
 		if err != nil {
 			return err
 		}
@@ -410,7 +416,15 @@ var queryRetrievalCmd = &cli.Command{
 			return err
 		}
 
-		printQueryResponse(query)
+		dht, err := dht.New(cctx.Context, nd.Host, dht.Mode(dht.ModeClient))
+		if err != nil {
+			return err
+		}
+
+		providers, err := dht.FindProviders(cctx.Context, cid)
+		availableOnIPFS := len(providers) != 0
+
+		printQueryResponse(query, availableOnIPFS)
 
 		return nil
 	},
