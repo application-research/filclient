@@ -33,6 +33,7 @@ require (
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
 	github.com/ipfs/go-ipfs-files v0.0.8
+	github.com/ipfs/go-ipld-format v0.2.0 // indirect
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-merkledag v0.4.0
 	github.com/ipfs/go-unixfs v0.2.6

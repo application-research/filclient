@@ -27,9 +27,6 @@ func parseMiner(cctx *cli.Context) (address.Address, error) {
 func parseMiners(cctx *cli.Context) ([]address.Address, error) {
 	// Each minerStringsRaw element may contain multiple comma-separated values
 	minerStringsRaw := cctx.StringSlice(flagMiners.Name)
-	if len(minerStringsRaw) == 0 {
-		return nil, fmt.Errorf("no miners were specified")
-	}
 
 	// Split any comma-separated minerStringsRaw elements
 	var minerStrings []string

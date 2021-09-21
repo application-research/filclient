@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -18,6 +19,7 @@ import (
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	files "github.com/ipfs/go-ipfs-files"
+	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
@@ -282,7 +284,7 @@ var retrieveFileCmd = &cli.Command{
 	Description: "Retrieve a file by CID from a miner. If desired, multiple miners can be specified as fallbacks in case of a failure (comma-separated, no spaces).",
 	ArgsUsage:   "<cid>",
 	Flags: []cli.Flag{
-		flagMinersRequired,
+		flagMiners,
 		flagOutput,
 	},
 	Action: func(cctx *cli.Context) error {
@@ -316,56 +318,103 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		fc, closer, err := clientFromNode(cctx, node, ddir)
+		// First check if we can just retrieve this from IPFS for free
+		// TODO: add opt-out option flag
+
+		dht, err := dht.New(cctx.Context, node.Host, dht.Mode(dht.ModeClient))
 		if err != nil {
 			return err
 		}
-		defer closer()
 
-		// Attempt the file retrieval from each miner
-		var retrievalDone bool
-		for _, miner := range miners {
-			msg := fmt.Sprintf("attempting retrieval with miner %s => root %s", miner, root)
-			fmt.Println(msg)
-
-			ask, err := fc.RetrievalQuery(cctx.Context, miner, root)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, nil)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			printRetrievalStats(stats)
-			retrievalDone = true
-			break
+		providers, err := dht.FindProviders(cctx.Context, root)
+		if err != nil {
+			return err
 		}
 
-		if !retrievalDone {
-			// none of the miners worked
-			return xerrors.New("retrieval failed for all miners")
+		bserv := blockservice.New(node.Blockstore, node.Bitswap)
+		dserv := merkledag.NewDAGService(bserv)
+
+		if len(providers) > 0 {
+			fmt.Printf("attempting IPFS retrieval with root %s\n", root)
+
+			cset := cid.NewSet()
+			if err := merkledag.Walk(cctx.Context, func(ctx context.Context, c cid.Cid) ([]*format.Link, error) {
+				if c.Type() == cid.Raw {
+					return nil, nil
+				}
+
+				node, err := dserv.Get(cctx.Context, root)
+				if err != nil {
+					return nil, err
+				}
+
+				return node.Links(), nil
+			}, root, cset.Visit, merkledag.Concurrent()); err != nil {
+				return err
+			}
+		} else {
+
+			// If we can't retrieve from IPFS, we carry on and do a full
+			// filecoin retrieval
+
+			// If there weren't any miners specified in the command, we should
+			// automatically search for some to try
+			if len(miners) == 0 {
+				// TODO
+				panic("todo")
+			}
+
+			fc, closer, err := clientFromNode(cctx, node, ddir)
+			if err != nil {
+				return err
+			}
+			defer closer()
+
+			// Attempt the file retrieval from each miner
+			var retrievalDone bool
+			for _, miner := range miners {
+				msg := fmt.Sprintf("attempting FIL retrieval with miner %s => root %s", miner, root)
+				fmt.Println(msg)
+
+				ask, err := fc.RetrievalQuery(cctx.Context, miner, root)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+
+				proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, nil)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+
+				stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+
+				printRetrievalStats(stats)
+				retrievalDone = true
+				break
+			}
+
+			if !retrievalDone {
+				// none of the miners worked
+				return xerrors.New("retrieval failed for all miners")
+			}
 		}
 
 		fmt.Println("Saving output to ", output)
 
-		dserv := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
+		dservOffline := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
 
-		dnode, err := dserv.Get(cctx.Context, root)
+		dnode, err := dservOffline.Get(cctx.Context, root)
 		if err != nil {
 			return err
 		}
 
-		ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dserv, dnode)
+		ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dservOffline, dnode)
 		if err != nil {
 			return err
 		}
@@ -422,6 +471,10 @@ var queryRetrievalCmd = &cli.Command{
 		}
 
 		providers, err := dht.FindProviders(cctx.Context, cid)
+		if err != nil {
+			return err
+		}
+
 		availableOnIPFS := len(providers) != 0
 
 		printQueryResponse(query, availableOnIPFS)
