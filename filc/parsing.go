@@ -9,8 +9,8 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
-// Read a single miner from the CLI, erroring if more than one is specified, or
-// none are present.
+// Read a single miner from the CLI, returning address.Undef if none is
+// provided.
 func parseMiner(cctx *cli.Context) (address.Address, error) {
 	minerStringRaw := cctx.String(flagMiner.Name)
 
@@ -22,8 +22,7 @@ func parseMiner(cctx *cli.Context) (address.Address, error) {
 	return miner, nil
 }
 
-// Read a comma-separated list of miners from the CLI, erroring if none are
-// present.
+// Read a comma-separated or multi flag list of miners from the CLI.
 func parseMiners(cctx *cli.Context) ([]address.Address, error) {
 	// Each minerStringsRaw element may contain multiple comma-separated values
 	minerStringsRaw := cctx.StringSlice(flagMiners.Name)

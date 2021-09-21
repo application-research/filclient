@@ -428,7 +428,7 @@ var queryRetrievalCmd = &cli.Command{
 	Usage:     "Query retrieval information for a CID",
 	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
-		flagMinerRequired,
+		flagMiner,
 	},
 	Action: func(cctx *cli.Context) error {
 
@@ -454,17 +454,6 @@ var queryRetrievalCmd = &cli.Command{
 			return err
 		}
 
-		fc, closer, err := clientFromNode(cctx, nd, ddir)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		query, err := fc.RetrievalQuery(cctx.Context, miner, cid)
-		if err != nil {
-			return err
-		}
-
 		dht, err := dht.New(cctx.Context, nd.Host, dht.Mode(dht.ModeClient))
 		if err != nil {
 			return err
@@ -477,7 +466,25 @@ var queryRetrievalCmd = &cli.Command{
 
 		availableOnIPFS := len(providers) != 0
 
-		printQueryResponse(query, availableOnIPFS)
+		if miner != address.Undef {
+			fc, closer, err := clientFromNode(cctx, nd, ddir)
+			if err != nil {
+				return err
+			}
+			defer closer()
+
+			query, err := fc.RetrievalQuery(cctx.Context, miner, cid)
+			if err != nil {
+				return err
+			}
+
+			printQueryResponse(query, availableOnIPFS)
+		} else {
+			fmt.Println("No miner specified")
+			if availableOnIPFS {
+				fmt.Println("Available on IPFS")
+			}
+		}
 
 		return nil
 	},
