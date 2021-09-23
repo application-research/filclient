@@ -12,6 +12,7 @@ import (
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
@@ -127,8 +128,10 @@ func (node *Node) RetrieveFromBestCandidate(
 			}
 
 			// Select lower price, or continue if equal
-			if !a.MinPricePerByte.Equals(b.MinPricePerByte) {
-				return a.MinPricePerByte.LessThan(b.MinPricePerByte)
+			aTotalPrice := big.Add(big.Mul(a.MinPricePerByte, big.NewIntUnsigned(a.Size)), a.UnsealPrice)
+			bTotalPrice := big.Add(big.Mul(b.MinPricePerByte, big.NewIntUnsigned(b.Size)), b.UnsealPrice)
+			if !aTotalPrice.Equals(bTotalPrice) {
+				return aTotalPrice.LessThan(bTotalPrice)
 			}
 
 			// Select smaller size, or continue if equal
