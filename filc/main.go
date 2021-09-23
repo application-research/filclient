@@ -9,6 +9,8 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+var log = logging.Logger("filc")
+
 func main() {
 	//--system dt-impl --system dt-chanmon --system dt_graphsync --system graphsync --system data_transfer_network debug
 	logging.SetLogLevel("dt-impl", "debug")

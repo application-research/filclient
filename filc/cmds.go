@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
@@ -19,7 +18,6 @@ import (
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	files "github.com/ipfs/go-ipfs-files"
-	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
@@ -331,27 +329,9 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		bserv := blockservice.New(node.Blockstore, node.Bitswap)
-		dserv := merkledag.NewDAGService(bserv)
-
 		if len(providers) > 0 {
 			fmt.Printf("attempting IPFS retrieval with root %s\n", root)
 
-			cset := cid.NewSet()
-			if err := merkledag.Walk(cctx.Context, func(ctx context.Context, c cid.Cid) ([]*format.Link, error) {
-				if c.Type() == cid.Raw {
-					return nil, nil
-				}
-
-				node, err := dserv.Get(cctx.Context, root)
-				if err != nil {
-					return nil, err
-				}
-
-				return node.Links(), nil
-			}, root, cset.Visit, merkledag.Concurrent()); err != nil {
-				return err
-			}
 		} else {
 
 			// If we can't retrieve from IPFS, we carry on and do a full
