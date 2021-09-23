@@ -176,8 +176,7 @@ func (node *Node) RetrieveFromMiner(
 	c cid.Cid,
 ) (*filclient.RetrievalStats, error) {
 
-	msg := fmt.Sprintf("attempting FIL retrieval with miner %s => root %s", miner, c)
-	fmt.Println(msg)
+	log.Infof("Attempting FIL retrieval with miner %s => root %s", miner, c)
 
 	ask, err := fc.RetrievalQuery(ctx, miner, c)
 	if err != nil {
