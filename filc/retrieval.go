@@ -73,7 +73,7 @@ func (node *Node) RetrieveFromBestCandidate(
 ) (*filclient.RetrievalStats, error) {
 	// Try IPFS first, if requested
 	if cfg.tryIPFS {
-		log.Info("Searching IPFS for cid...")
+		log.Info("Searching IPFS for CID...")
 
 		avail, err := node.AvailableFromIPFS(ctx, c)
 		if err != nil {
@@ -81,21 +81,23 @@ func (node *Node) RetrieveFromBestCandidate(
 		}
 
 		if avail {
-			log.Info("The cid was found, starting retrieval")
+			log.Info("The CID was found, starting retrieval...")
+			panic("TODO")
 		} else {
-			log.Info("Could not find the cid on IPFS")
+			log.Info("Could not find the CID on IPFS")
 		}
 	}
 
 	// If IPFS retrieval was unavailable, do a full FIL retrieval. Start with
 	// querying all the candidates for sorting.
 
-	log.Info("Querying FIL retrieval candidates")
+	log.Infof("Querying FIL retrieval candidates...")
 
 	type CandidateQuery struct {
 		Candidate RetrievalCandidate
 		Response  *retrievalmarket.QueryResponse
 	}
+	checked := 0
 	var queries []CandidateQuery
 	var queriesLk sync.Mutex
 
@@ -112,17 +114,25 @@ func (node *Node) RetrieveFromBestCandidate(
 
 			query, err := fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				log.Errorf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
+				log.Debugf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
 				return
 			}
 
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
+			checked++
+			fmt.Printf("%v/%v\r", checked, len(candidates))
 			queriesLk.Unlock()
 		}()
 	}
 
 	wg.Wait()
+
+	log.Infof("Got back %v retrieval query results of a total of %v candidates", len(queries), len(candidates))
+
+	if len(queries) == 0 {
+		return nil, xerrors.Errorf("retrieval queries failed for all miners")
+	}
 
 	// After we got the query results, sort them with respect to the candidate
 	// selection config as long as noSort isn't requested (TODO - more options)
@@ -157,17 +167,17 @@ func (node *Node) RetrieveFromBestCandidate(
 	retrievalSucceeded := false
 	var statsOut *filclient.RetrievalStats
 	for _, query := range queries {
-		log.Infof("Attempting FIL retrieval with miner %s from root %s", query.Candidate.Miner, query.Candidate.RootCid)
+		log.Infof("Attempting FIL retrieval with miner %s from root CID %s", query.Candidate.Miner, query.Candidate.RootCid)
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
 		if err != nil {
-			fmt.Println(err)
+			log.Debugf("Failed to create retrieval proposal with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
 		}
 
 		stats, err := fc.RetrieveContent(ctx, query.Candidate.Miner, proposal)
 		if err != nil {
-			fmt.Println(err)
+			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
 		}
 

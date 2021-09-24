@@ -13,11 +13,12 @@ var log = logging.Logger("filc")
 
 func main() {
 	//--system dt-impl --system dt-chanmon --system dt_graphsync --system graphsync --system data_transfer_network debug
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("filclient", "debug")
+	logging.SetLogLevel("filc", "info")
+	// logging.SetLogLevel("dt-impl", "debug")
+	// logging.SetLogLevel("dt-chanmon", "debug")
+	// logging.SetLogLevel("dt_graphsync", "debug")
+	// logging.SetLogLevel("data_transfer_network", "debug")
+	// logging.SetLogLevel("filclient", "debug")
 	app := cli.NewApp()
 
 	app.Commands = []*cli.Command{
