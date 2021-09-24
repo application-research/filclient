@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"path"
 	"sort"
 	"sync"
 
@@ -37,18 +39,26 @@ type CandidateSelectionConfig struct {
 }
 
 func (node *Node) GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, error) {
-	resp, err := http.Get(endpoint + "/" + c.String())
+
+	endpointURL, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, xerrors.Errorf("endpoint %s is not a valid url", endpoint)
+	}
+	endpointURL.Path = path.Join(endpointURL.Path, c.String())
+
+	resp, err := http.Get(endpointURL.String())
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http request failed")
+		return nil, fmt.Errorf("http request to endpoint %s got status %v", endpointURL, resp.StatusCode)
 	}
 
 	var res []RetrievalCandidate
 
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, fmt.Errorf("could not unmarshal http response for cid %s, may have been null", c)
+		return nil, xerrors.Errorf("could not unmarshal http response for cid %s", c)
 	}
 
 	return res, nil
@@ -56,18 +66,18 @@ func (node *Node) GetRetrievalCandidates(endpoint string, c cid.Cid) ([]Retrieva
 
 func (node *Node) RetrieveFromBestCandidate(
 	ctx context.Context,
-	fc filclient.FilClient,
+	fc *filclient.FilClient,
 	c cid.Cid,
 	candidates []RetrievalCandidate,
 	cfg CandidateSelectionConfig,
-) error {
+) (*filclient.RetrievalStats, error) {
 	// Try IPFS first, if requested
 	if cfg.tryIPFS {
 		log.Info("Searching IPFS for cid...")
 
 		avail, err := node.AvailableFromIPFS(ctx, c)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if avail {
@@ -145,8 +155,9 @@ func (node *Node) RetrieveFromBestCandidate(
 
 	// Now attempt retrievals in serial from first to last, until one works
 	retrievalSucceeded := false
+	var statsOut *filclient.RetrievalStats
 	for _, query := range queries {
-		log.Infof("Attempting FIL retrieval with miner %s => root %s", query.Candidate.Miner, query.Candidate.RootCid)
+		log.Infof("Attempting FIL retrieval with miner %s from root %s", query.Candidate.Miner, query.Candidate.RootCid)
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
 		if err != nil {
@@ -160,16 +171,16 @@ func (node *Node) RetrieveFromBestCandidate(
 			continue
 		}
 
-		printRetrievalStats(stats)
+		statsOut = stats
 		retrievalSucceeded = true
 		break
 	}
 
 	if !retrievalSucceeded {
-		return xerrors.New("retrieval failed for all miners")
+		return nil, xerrors.New("retrieval failed for all miners")
 	}
 
-	return nil
+	return statsOut, nil
 }
 
 func (node *Node) RetrieveFromMiner(
@@ -178,9 +189,6 @@ func (node *Node) RetrieveFromMiner(
 	miner address.Address,
 	c cid.Cid,
 ) (*filclient.RetrievalStats, error) {
-
-	log.Infof("Attempting FIL retrieval with miner %s => root %s", miner, c)
-
 	ask, err := fc.RetrievalQuery(ctx, miner, c)
 	if err != nil {
 		return nil, err

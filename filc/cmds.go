@@ -5,7 +5,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -286,6 +285,9 @@ var retrieveFileCmd = &cli.Command{
 		flagOutput,
 	},
 	Action: func(cctx *cli.Context) error {
+
+		// Parse command input
+
 		cidStr := cctx.Args().First()
 		if cidStr == "" {
 			return fmt.Errorf("please specify a CID to retrieve")
@@ -304,10 +306,12 @@ var retrieveFileCmd = &cli.Command{
 			output = cidStr
 		}
 
-		root, err := cid.Decode(cidStr)
+		c, err := cid.Decode(cidStr)
 		if err != nil {
 			return err
 		}
+
+		// Set up node and filclient
 
 		ddir := ddir(cctx)
 
@@ -316,80 +320,56 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		// First check if we can just retrieve this from IPFS for free
-		// TODO: add opt-out option flag
-
-		dht, err := dht.New(cctx.Context, node.Host, dht.Mode(dht.ModeClient))
+		fc, closer, err := clientFromNode(cctx, node, ddir)
 		if err != nil {
 			return err
 		}
+		defer closer()
 
-		providers, err := dht.FindProviders(cctx.Context, root)
-		if err != nil {
-			return err
-		}
+		// Collect retrieval candidates and config. If one or more miners are
+		// provided, use those with the requested cid as the root cid as the
+		// candidate list. Otherwise, we can use the auto retrieve API endpoint
+		// to automatically find some candidates to retrieve from.
 
-		if len(providers) > 0 {
-			fmt.Printf("attempting IPFS retrieval with root %s\n", root)
-
-		} else {
-
-			// If we can't retrieve from IPFS, we carry on and do a full
-			// filecoin retrieval
-
-			// If there weren't any miners specified in the command, we should
-			// automatically search for some to try
-			if len(miners) == 0 {
-				// TODO
-				panic("todo")
+		var candidates []RetrievalCandidate
+		if len(miners) > 0 {
+			for _, miner := range miners {
+				candidates = append(candidates, RetrievalCandidate{
+					Miner:   miner,
+					RootCid: c,
+				})
 			}
-
-			fc, closer, err := clientFromNode(cctx, node, ddir)
+		} else {
+			endpoint := "https://api.estuary.tech/retrieval-candidates" // TODO: don't hard code
+			candidates_, err := node.GetRetrievalCandidates(endpoint, c)
 			if err != nil {
 				return err
 			}
-			defer closer()
-
-			// Attempt the file retrieval from each miner
-			var retrievalDone bool
-			for _, miner := range miners {
-				msg := fmt.Sprintf("attempting FIL retrieval with miner %s => root %s", miner, root)
-				fmt.Println(msg)
-
-				ask, err := fc.RetrievalQuery(cctx.Context, miner, root)
-				if err != nil {
-					fmt.Println(err)
-					continue
-				}
-
-				proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, nil)
-				if err != nil {
-					fmt.Println(err)
-					continue
-				}
-
-				stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
-				if err != nil {
-					fmt.Println(err)
-					continue
-				}
-
-				printRetrievalStats(stats)
-				retrievalDone = true
-				break
+			if len(candidates_) == 0 {
+				return xerrors.Errorf("no miners were found to retrieve this CID from")
 			}
 
-			if !retrievalDone {
-				// none of the miners worked
-				return xerrors.New("retrieval failed for all miners")
-			}
+			candidates = candidates_
 		}
+
+		// Do the retrieval
+
+		stats, err := node.RetrieveFromBestCandidate(cctx.Context, fc, c, candidates, CandidateSelectionConfig{
+			tryIPFS: true,
+		})
+		if err != nil {
+			return err
+		}
+
+		printRetrievalStats(stats)
+
+		// Save the output
 
 		fmt.Println("Saving output to ", output)
 
 		dservOffline := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
 
-		dnode, err := dservOffline.Get(cctx.Context, root)
+		dnode, err := dservOffline.Get(cctx.Context, c)
 		if err != nil {
 			return err
 		}
