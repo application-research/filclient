@@ -148,8 +148,8 @@ func (node *Node) RetrieveFromBestCandidate(
 			}
 
 			// Select lower price, or continue if equal
-			aTotalPrice := big.Add(big.Mul(a.MinPricePerByte, big.NewIntUnsigned(a.Size)), a.UnsealPrice)
-			bTotalPrice := big.Add(big.Mul(b.MinPricePerByte, big.NewIntUnsigned(b.Size)), b.UnsealPrice)
+			aTotalPrice := totalCost(a)
+			bTotalPrice := totalCost(b)
 			if !aTotalPrice.Equals(bTotalPrice) {
 				return aTotalPrice.LessThan(bTotalPrice)
 			}
@@ -167,7 +167,7 @@ func (node *Node) RetrieveFromBestCandidate(
 	retrievalSucceeded := false
 	var statsOut *filclient.RetrievalStats
 	for _, query := range queries {
-		log.Infof("Attempting FIL retrieval with miner %s from root CID %s", query.Candidate.Miner, query.Candidate.RootCid)
+		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s FIL)", query.Candidate.Miner, query.Candidate.RootCid, totalCost(query.Response))
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
 		if err != nil {
@@ -254,4 +254,8 @@ func (node *Node) AvailableFromIPFS(ctx context.Context, cid cid.Cid) (bool, err
 	available := len(providers) > 0
 
 	return available, nil
+}
+
+func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
+	return big.Add(big.Mul(qres.MinPricePerByte, big.NewIntUnsigned(qres.Size)), qres.UnsealPrice)
 }
