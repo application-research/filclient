@@ -22,7 +22,7 @@ func main() {
 		EncodeLevel: zapcore.CapitalColorLevelEncoder,
 		EncodeTime:  zapcore.TimeEncoderOfLayout("15:04:05"),
 
-		ConsoleSeparator: " | ",
+		ConsoleSeparator: "  ",
 	}), os.Stdout, zapcore.InfoLevel))
 	logging.SetLogLevel("filc", "info")
 	// logging.SetLogLevel("dt-impl", "debug")
