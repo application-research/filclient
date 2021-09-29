@@ -24,7 +24,8 @@ func main() {
 
 		ConsoleSeparator: "  ",
 	}), os.Stdout, zapcore.InfoLevel))
-	logging.SetLogLevel("filc", "info")
+	logging.SetLogLevel("filc", "debug")
+	defer log.Sync()
 	// logging.SetLogLevel("dt-impl", "debug")
 	// logging.SetLogLevel("dt-chanmon", "debug")
 	// logging.SetLogLevel("dt_graphsync", "debug")

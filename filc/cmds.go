@@ -345,9 +345,6 @@ var retrieveFileCmd = &cli.Command{
 			if err != nil {
 				return err
 			}
-			if len(candidates_) == 0 {
-				return xerrors.Errorf("no miners were found to retrieve this CID from")
-			}
 
 			candidates = candidates_
 		}
