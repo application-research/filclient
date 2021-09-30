@@ -41,10 +41,10 @@ require (
 	github.com/ipld/go-car v0.3.1-0.20210601190600-f512dac51e8e
 	github.com/ipld/go-ipld-prime v0.12.2
 	github.com/kr/text v0.2.0 // indirect
-	github.com/libp2p/go-libp2p v0.14.2
+	github.com/libp2p/go-libp2p v0.14.4
 	github.com/libp2p/go-libp2p-core v0.8.6
 	github.com/libp2p/go-libp2p-crypto v0.1.0
-	github.com/libp2p/go-libp2p-kad-dht v0.11.0
+	github.com/libp2p/go-libp2p-kad-dht v0.13.1
 	github.com/libp2p/go-libp2p-protocol v0.1.0
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/go-homedir v1.1.0

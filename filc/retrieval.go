@@ -116,18 +116,20 @@ func (node *Node) RetrieveFromBestCandidate(
 			log.Info("The CID was found on IPFS, connecting to hosts...")
 
 			// Connect to the retrieved hosts
-			connected := false
+			connectedCount := 0
 			for _, provider := range providers {
 				if err := node.Host.Connect(ctx, provider); err != nil {
-					log.Errorf("Failed to connect to IPFS provider %s: %v", provider, err)
+					log.Debugf("Failed to connect to IPFS provider %s: %v", provider, err)
 					continue
 				}
-				connected = true
+				connectedCount++
 			}
 
 			// If we were able to connect to at least one of the hosts, go ahead
 			// with the retrieval
-			if connected {
+			if connectedCount > 0 {
+				log.Infof("Successfully connected to %v/%v providers", connectedCount, len(providers))
+
 				log.Info("Starting retrieval")
 
 				bserv := blockservice.New(node.Blockstore, node.Bitswap)
@@ -141,6 +143,8 @@ func (node *Node) RetrieveFromBestCandidate(
 						return nil, err
 					}
 
+					fmt.Print(".")
+
 					if c.Type() == cid.Raw {
 						return nil, nil
 					}
@@ -153,9 +157,9 @@ func (node *Node) RetrieveFromBestCandidate(
 				log.Info("IPFS retrieval succeeded")
 
 				// TODO: return ipfs stats
-				return nil, nil
+				return &filclient.RetrievalStats{}, nil
 			} else {
-				log.Info("Could not connect to any hosts, will not attempt IPFS retrieval")
+				log.Info("Could not connect to any providers, will not attempt IPFS retrieval")
 			}
 		} else {
 			log.Info("Could not find the CID on IPFS")
