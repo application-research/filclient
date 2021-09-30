@@ -12,6 +12,7 @@ import (
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
+	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-state-types/big"
@@ -134,9 +135,9 @@ func (node *Node) RetrieveFromBestCandidate(
 		avail := len(providers) > 0
 
 		if avail {
-			log.Info("The CID was found on IPFS, connecting to hosts...")
+			log.Info("The CID was found on IPFS, connecting to providers...")
 
-			// Connect to the retrieved hosts
+			// Connect to the retrieved providers
 			connectedCount := 0
 			for _, provider := range providers {
 				if err := node.Host.Connect(ctx, provider); err != nil {
@@ -146,11 +147,11 @@ func (node *Node) RetrieveFromBestCandidate(
 				connectedCount++
 			}
 
-			// If we were able to connect to at least one of the hosts, go ahead
+			// If we were able to connect to at least one of the providers, go ahead
 			// with the retrieval
 
-			var blockCountLk sync.Mutex
-			blockCount := 0
+			var progressLk sync.Mutex
+			var bytesRetrieved uint64 = 0
 
 			if connectedCount > 0 {
 				log.Infof("Successfully connected to %v/%v providers", connectedCount, len(providers))
@@ -168,10 +169,14 @@ func (node *Node) RetrieveFromBestCandidate(
 						return nil, err
 					}
 
-					blockCountLk.Lock()
-					blockCount++
-					fmt.Printf("%v blocks retrieved\r", blockCount)
-					blockCountLk.Unlock()
+					progressLk.Lock()
+					nodeSize, err := node.Size()
+					if err != nil {
+						nodeSize = 0
+					}
+					bytesRetrieved += nodeSize
+					fmt.Printf("%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
+					progressLk.Unlock()
 
 					if c.Type() == cid.Raw {
 						return nil, nil
