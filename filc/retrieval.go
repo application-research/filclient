@@ -103,8 +103,8 @@ func (node *Node) RetrieveFromBestCandidate(
 			ai := ai
 
 			go func() {
-				defer peersConnected.Done()
 				defer func() {
+					peersConnected.Done()
 					peersLk.Lock()
 					peersConnectedCount++
 					fmt.Printf("%v/%v\r", peersConnectedCount, len(bootstrapPeers))
