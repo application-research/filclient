@@ -91,12 +91,33 @@ func (node *Node) RetrieveFromBestCandidate(
 			return nil, err
 		}
 
-		for i, ai := range bootstrapPeers {
-			fmt.Printf("%v/%v\r", i+1, len(bootstrapPeers))
-			if err := node.Host.Connect(ctx, ai); err != nil {
-				log.Errorf("Couldn't connect to bootstrap peer %s", ai)
-			}
+		// Connect to IPFS peers in parallel
+
+		var peersConnected sync.WaitGroup
+		var peersLk sync.Mutex
+		peersConnectedCount := 0
+
+		peersConnected.Add(len(bootstrapPeers))
+
+		for _, ai := range bootstrapPeers {
+			ai := ai
+
+			go func() {
+				defer peersConnected.Done()
+				defer func() {
+					peersLk.Lock()
+					peersConnectedCount++
+					fmt.Printf("%v/%v\r", peersConnectedCount, len(bootstrapPeers))
+					peersLk.Unlock()
+				}()
+
+				if err := node.Host.Connect(ctx, ai); err != nil {
+					log.Errorf("Couldn't connect to bootstrap peer %s", ai)
+					return
+				}
+			}()
 		}
+		peersConnected.Wait()
 
 		if err := dht.Bootstrap(ctx); err != nil {
 			return nil, err
