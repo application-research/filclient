@@ -148,10 +148,14 @@ func (node *Node) RetrieveFromBestCandidate(
 
 			// If we were able to connect to at least one of the hosts, go ahead
 			// with the retrieval
+
+			var blockCountLk sync.Mutex
+			blockCount := 0
+
 			if connectedCount > 0 {
 				log.Infof("Successfully connected to %v/%v providers", connectedCount, len(providers))
 
-				log.Info("Starting retrieval")
+				log.Info("Starting IPFS retrieval")
 
 				bserv := blockservice.New(node.Blockstore, node.Bitswap)
 				dserv := merkledag.NewDAGService(bserv)
@@ -164,7 +168,10 @@ func (node *Node) RetrieveFromBestCandidate(
 						return nil, err
 					}
 
-					fmt.Print(".")
+					blockCountLk.Lock()
+					blockCount++
+					fmt.Printf("%v blocks retrieved\r", blockCount)
+					blockCountLk.Unlock()
 
 					if c.Type() == cid.Raw {
 						return nil, nil
