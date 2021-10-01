@@ -9,6 +9,7 @@ import (
 	"path"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
@@ -68,13 +69,52 @@ func (node *Node) GetRetrievalCandidates(endpoint string, c cid.Cid) ([]Retrieva
 	return res, nil
 }
 
+type RetrievalStats interface {
+	GetByteSize() uint64
+	GetDuration() time.Duration
+	GetAverageBytesPerSecond() uint64
+}
+
+type FILRetrievalStats struct {
+	filclient.RetrievalStats
+}
+
+func (stats *FILRetrievalStats) GetByteSize() uint64 {
+	return stats.Size
+}
+
+func (stats *FILRetrievalStats) GetDuration() time.Duration {
+	return stats.Duration
+}
+
+func (stats *FILRetrievalStats) GetAverageBytesPerSecond() uint64 {
+	return stats.AverageSpeed
+}
+
+type IPFSRetrievalStats struct {
+	ByteSize uint64
+	Duration time.Duration
+}
+
+func (stats *IPFSRetrievalStats) GetByteSize() uint64 {
+	return stats.ByteSize
+}
+
+func (stats *IPFSRetrievalStats) GetDuration() time.Duration {
+	return stats.Duration
+}
+
+func (stats *IPFSRetrievalStats) GetAverageBytesPerSecond() uint64 {
+	return uint64(float64(stats.ByteSize) / stats.Duration.Seconds())
+}
+
 func (node *Node) RetrieveFromBestCandidate(
 	ctx context.Context,
 	fc *filclient.FilClient,
 	c cid.Cid,
 	candidates []RetrievalCandidate,
 	cfg CandidateSelectionConfig,
-) (*filclient.RetrievalStats, error) {
+) (RetrievalStats, error) {
 	// Try IPFS first, if requested
 	if cfg.tryIPFS {
 		log.Info("Searching IPFS for CID...")
@@ -152,6 +192,7 @@ func (node *Node) RetrieveFromBestCandidate(
 
 			var progressLk sync.Mutex
 			var bytesRetrieved uint64 = 0
+			startTime := time.Now()
 
 			if connectedCount > 0 {
 				log.Infof("Successfully connected to %v/%v providers", connectedCount, len(providers))
@@ -189,8 +230,10 @@ func (node *Node) RetrieveFromBestCandidate(
 
 				log.Info("IPFS retrieval succeeded")
 
-				// TODO: return ipfs stats
-				return &filclient.RetrievalStats{}, nil
+				return &IPFSRetrievalStats{
+					ByteSize: bytesRetrieved,
+					Duration: time.Since(startTime),
+				}, nil
 			} else {
 				log.Info("Could not connect to any providers, will not attempt IPFS retrieval")
 			}
@@ -280,9 +323,10 @@ func (node *Node) RetrieveFromBestCandidate(
 		})
 	}
 
-	// Now attempt retrievals in serial from first to last, until one works
-	retrievalSucceeded := false
-	var statsOut *filclient.RetrievalStats
+	// Now attempt retrievals in serial from first to last, until one works.
+	// stats will get set if a retrieval succeeds - if no retrievals work, it
+	// will still be nil after the loop finishes
+	var stats RetrievalStats = nil
 	for _, query := range queries {
 		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s FIL)", query.Candidate.Miner, query.Candidate.RootCid, totalCost(query.Response))
 
@@ -292,24 +336,23 @@ func (node *Node) RetrieveFromBestCandidate(
 			continue
 		}
 
-		stats, err := fc.RetrieveContent(ctx, query.Candidate.Miner, proposal)
+		stats_, err := fc.RetrieveContent(ctx, query.Candidate.Miner, proposal)
 		if err != nil {
 			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
 		}
 
-		statsOut = stats
-		retrievalSucceeded = true
+		stats = &FILRetrievalStats{RetrievalStats: *stats_}
 		break
 	}
 
-	if !retrievalSucceeded {
+	if stats == nil {
 		return nil, xerrors.New("retrieval failed: all miners failed to respond")
 	}
 
 	log.Info("FIL retrieval succeeded")
 
-	return statsOut, nil
+	return stats, nil
 }
 
 func (node *Node) RetrieveFromMiner(

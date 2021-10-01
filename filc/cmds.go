@@ -362,8 +362,6 @@ var retrieveFileCmd = &cli.Command{
 
 		// Save the output
 
-		fmt.Println("Saving output to ", output)
-
 		dservOffline := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
 
 		dnode, err := dservOffline.Get(cctx.Context, c)
@@ -376,7 +374,13 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		return files.WriteTo(ufsFile, output)
+		if err := files.WriteTo(ufsFile, output); err != nil {
+			return err
+		}
+
+		fmt.Println("Saved output to", output)
+
+		return nil
 	},
 }
 
