@@ -410,17 +410,23 @@ var retrieveFileCmd = &cli.Command{
 				selspec.Node(),
 				func(p traversal.Progress, n ipld.Node, r traversal.VisitReason) error {
 					if r == traversal.VisitReason_SelectionMatch {
+
+						if p.LastBlock.Path.String() != p.Path.String() {
+							return xerrors.Errorf("unsupported selection path '%s' does not correspond to a node boundary (a.k.a. CID link)", p.Path.String())
+						}
+
 						cidLnk, castOK := p.LastBlock.Link.(cidlink.Link)
 						if !castOK {
 							return xerrors.Errorf("cidlink cast unexpectedly failed on '%s'", p.LastBlock.Link.String())
 						}
+
 						root = cidLnk.Cid
 						subRootFound = true
 					}
 					return nil
 				},
 			); err != nil {
-				return xerrors.Errorf("error determining partial retrieval sub-root: %w", err)
+				return xerrors.Errorf("error while locating partial retrieval sub-root: %w", err)
 			}
 
 			if !subRootFound {
