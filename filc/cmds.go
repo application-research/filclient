@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -21,6 +22,13 @@ import (
 	"github.com/ipfs/go-merkledag"
 	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
+	"github.com/ipld/go-ipld-prime"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipld/go-ipld-prime/traversal"
+	"github.com/ipld/go-ipld-prime/traversal/selector"
+	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
+	textselector "github.com/ipld/go-ipld-selector-text-lite"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -283,12 +291,15 @@ var retrieveFileCmd = &cli.Command{
 	Flags: []cli.Flag{
 		flagMinersRequired,
 		flagOutput,
+		flagDmPathSel,
 	},
 	Action: func(cctx *cli.Context) error {
 		cidStr := cctx.Args().First()
 		if cidStr == "" {
 			return fmt.Errorf("please specify a CID to retrieve")
 		}
+
+		dmSelText := textselector.Expression(cctx.String(flagDmPathSel.Name))
 
 		miners, err := parseMiners(cctx)
 		if err != nil {
@@ -301,11 +312,35 @@ var retrieveFileCmd = &cli.Command{
 		}
 		if output == "" {
 			output = cidStr
+			if dmSelText != "" {
+				output += "_" + url.QueryEscape(string(dmSelText))
+			}
 		}
 
 		root, err := cid.Decode(cidStr)
 		if err != nil {
 			return err
+		}
+
+		var selNode ipld.Node
+		if dmSelText != "" {
+			ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+
+			selspec, err := textselector.SelectorSpecFromPath(
+				dmSelText,
+
+				// URGH - this is a direct copy from https://github.com/filecoin-project/go-fil-markets/blob/v1.12.0/shared/selectors.go#L10-L16
+				// Unable to use it because we need the SelectorSpec, and markets exposes just a reified node
+				ssb.ExploreRecursive(
+					selector.RecursionLimitNone(),
+					ssb.ExploreAll(ssb.ExploreRecursiveEdge()),
+				),
+			)
+			if err != nil {
+				return xerrors.Errorf("failed to parse text-selector '%s': %w", dmSelText, err)
+			}
+
+			selNode = selspec.Node()
 		}
 
 		ddir := ddir(cctx)
@@ -325,6 +360,9 @@ var retrieveFileCmd = &cli.Command{
 		var retrievalDone bool
 		for _, miner := range miners {
 			msg := fmt.Sprintf("attempting retrieval with miner %s => root %s", miner, root)
+			if dmSelText != "" {
+				msg += " => selector " + string(dmSelText)
+			}
 			fmt.Println(msg)
 
 			ask, err := fc.RetrievalQuery(cctx.Context, miner, root)
@@ -333,7 +371,7 @@ var retrieveFileCmd = &cli.Command{
 				continue
 			}
 
-			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, nil)
+			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, selNode)
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -358,6 +396,43 @@ var retrieveFileCmd = &cli.Command{
 		fmt.Println("Saving output to ", output)
 
 		dserv := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
+
+		// if we used a selector - need to find the sub-root the user actually wanted to retrieve
+		if dmSelText != "" {
+			var subRootFound bool
+
+			// no err check - we just compiled this before starting, but now we do not wrap a `*`
+			selspec, _ := textselector.SelectorSpecFromPath(dmSelText, nil) //nolint:errcheck
+			if err := retrievehelper.TraverseDag(
+				cctx.Context,
+				dserv,
+				root,
+				selspec.Node(),
+				func(p traversal.Progress, n ipld.Node, r traversal.VisitReason) error {
+					if r == traversal.VisitReason_SelectionMatch {
+
+						if p.LastBlock.Path.String() != p.Path.String() {
+							return xerrors.Errorf("unsupported selection path '%s' does not correspond to a node boundary (a.k.a. CID link)", p.Path.String())
+						}
+
+						cidLnk, castOK := p.LastBlock.Link.(cidlink.Link)
+						if !castOK {
+							return xerrors.Errorf("cidlink cast unexpectedly failed on '%s'", p.LastBlock.Link.String())
+						}
+
+						root = cidLnk.Cid
+						subRootFound = true
+					}
+					return nil
+				},
+			); err != nil {
+				return xerrors.Errorf("error while locating partial retrieval sub-root: %w", err)
+			}
+
+			if !subRootFound {
+				return xerrors.Errorf("path selection '%s' does not match a node within %s", dmSelText, root)
+			}
+		}
 
 		dnode, err := dserv.Get(cctx.Context, root)
 		if err != nil {
