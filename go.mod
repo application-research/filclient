@@ -39,7 +39,7 @@ require (
 	github.com/ipfs/go-unixfs v0.2.6
 	github.com/ipld/go-car v0.3.1-0.20210601190600-f512dac51e8e
 	github.com/ipld/go-codec-dagpb v1.3.0
-	github.com/ipld/go-ipld-prime v0.12.2
+	github.com/ipld/go-ipld-prime v0.12.3
 	github.com/ipld/go-ipld-selector-text-lite v0.0.0-20210817134355-4c190a2bb825
 	github.com/kr/text v0.2.0 // indirect
 	github.com/libp2p/go-libp2p v0.14.2
