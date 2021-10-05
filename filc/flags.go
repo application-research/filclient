@@ -32,3 +32,7 @@ var flagOutput = &cli.StringFlag{
 	Name:    "output",
 	Aliases: []string{"o"},
 }
+
+var flagNoIPFS = &cli.BoolFlag{
+	Name: "no-ipfs",
+}

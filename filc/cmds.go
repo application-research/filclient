@@ -283,6 +283,7 @@ var retrieveFileCmd = &cli.Command{
 	Flags: []cli.Flag{
 		flagMiners,
 		flagOutput,
+		flagNoIPFS,
 	},
 	Action: func(cctx *cli.Context) error {
 
@@ -305,6 +306,9 @@ var retrieveFileCmd = &cli.Command{
 		if output == "" {
 			output = cidStr
 		}
+
+		noIPFS := cctx.Bool(flagNoIPFS.Name)
+		println("NO IPFS:", noIPFS)
 
 		c, err := cid.Decode(cidStr)
 		if err != nil {
@@ -352,7 +356,7 @@ var retrieveFileCmd = &cli.Command{
 		// Do the retrieval
 
 		stats, err := node.RetrieveFromBestCandidate(cctx.Context, fc, c, candidates, CandidateSelectionConfig{
-			tryIPFS: true,
+			tryIPFS: !noIPFS,
 		})
 		if err != nil {
 			return err
