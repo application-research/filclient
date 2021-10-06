@@ -999,12 +999,15 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	defer unsubscribe()
 
 	// Submit the retrieval deal proposal to the miner
-	chanidLk.Lock()
-	chanid, err = fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
-	chanidLk.Unlock()
+	newchid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
 	if err != nil {
 		return nil, err
 	}
+
+	chanidLk.Lock()
+	chanid = newchid
+	chanidLk.Unlock()
+
 	// Wait for the retrieval to finish before exiting the function
 	select {
 	case err := <-dtRes:
