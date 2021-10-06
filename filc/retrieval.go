@@ -124,7 +124,7 @@ func (node *Node) RetrieveFromBestCandidate(
 	//
 	// TODO (6 Oct 2021): we should only check cfg.tryIPFS here in the future
 	// (see function comment)
-	if cfg.tryIPFS && selNode != nil {
+	if cfg.tryIPFS && (selNode == nil || selNode.IsNull()) {
 		log.Info("Searching IPFS for CID...")
 
 		log.Info("Bootstrapping DHT...")
