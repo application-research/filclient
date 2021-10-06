@@ -19,8 +19,9 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
-	ipld "github.com/ipfs/go-ipld-format"
+	ipldformat "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipld/go-ipld-prime"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"golang.org/x/xerrors"
 )
@@ -108,15 +109,22 @@ func (stats *IPFSRetrievalStats) GetAverageBytesPerSecond() uint64 {
 	return uint64(float64(stats.ByteSize) / stats.Duration.Seconds())
 }
 
+// NOTE (6 Oct 2021) - presently, if selNode is specified, then cfg.tryIPFS will
+// be silently ignored, and an ipfs retrieval will not be attempted. This will
+// be fixed very soon.
 func (node *Node) RetrieveFromBestCandidate(
 	ctx context.Context,
 	fc *filclient.FilClient,
 	c cid.Cid,
+	selNode ipld.Node,
 	candidates []RetrievalCandidate,
 	cfg CandidateSelectionConfig,
 ) (RetrievalStats, error) {
 	// Try IPFS first, if requested
-	if cfg.tryIPFS {
+	//
+	// TODO (6 Oct 2021): we should only check cfg.tryIPFS here in the future
+	// (see function comment)
+	if cfg.tryIPFS && selNode != nil {
 		log.Info("Searching IPFS for CID...")
 
 		log.Info("Bootstrapping DHT...")
@@ -204,7 +212,7 @@ func (node *Node) RetrieveFromBestCandidate(
 				//dsess := dserv.Session(ctx)
 
 				cset := cid.NewSet()
-				if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+				if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
 					node, err := dserv.Get(ctx, c)
 					if err != nil {
 						return nil, err
@@ -329,8 +337,9 @@ func (node *Node) RetrieveFromBestCandidate(
 	var stats RetrievalStats = nil
 	for _, query := range queries {
 		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s FIL)", query.Candidate.Miner, query.Candidate.RootCid, totalCost(query.Response))
+		log.Infof("Using selector %s")
 
-		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
+		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, selNode)
 		if err != nil {
 			log.Debugf("Failed to create retrieval proposal with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
@@ -384,7 +393,7 @@ func (node *Node) RetrieveFromIPFS(ctx context.Context, c cid.Cid) error {
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
-	if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+	if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
 		if c.Type() == cid.Raw {
 			return nil, nil
 		}
