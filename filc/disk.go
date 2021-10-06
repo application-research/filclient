@@ -167,7 +167,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		return nil, err
 	}
 
-	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix, fullrt.DHTOption(dht.Datastore(ds), dht.BucketSize(20), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)))
+	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix, fullrt.DHTOption(dht.Datastore(ds), dht.Mode(dht.ModeClient), dht.BucketSize(20), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)))
 	if err != nil {
 		return nil, err
 	}
