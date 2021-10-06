@@ -114,13 +114,14 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 	gse := graphsync.New(context.Background(),
 		gsnet.NewFromLibp2pHost(h),
 		storeutil.LinkSystemForBlockstore(bs),
-		graphsync.MaxInProgressRequests(200),
+		graphsync.MaxInProgressIncomingRequests(200),
+		graphsync.MaxInProgressOutgoingRequests(200),
 		graphsync.MaxMemoryResponder(8<<30),
 		graphsync.MaxMemoryPerPeerResponder(32<<20),
 	)
 
-	tpt := gst.NewTransport(h.ID(), gse)
 	dtn := dtnet.NewFromLibp2pHost(h)
+	tpt := gst.NewTransport(h.ID(), gse, dtn)
 
 	dtRestartConfig := dtimpl.ChannelRestartConfig(channelmonitor.Config{
 		/* old values for old stuff
