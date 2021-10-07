@@ -23,9 +23,9 @@ import (
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
-	crypto "github.com/libp2p/go-libp2p-crypto"
 	cli "github.com/urfave/cli/v2"
 )
 
