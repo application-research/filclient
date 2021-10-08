@@ -22,6 +22,7 @@ import (
 	ipldformat "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipld/go-ipld-prime"
+	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"golang.org/x/xerrors"
 )
@@ -143,9 +144,7 @@ func (node *Node) RetrieveFromBestCandidate(
 		peersConnected.Add(len(bootstrapPeers))
 
 		for _, ai := range bootstrapPeers {
-			ai := ai
-
-			go func() {
+			go func(ai peer.AddrInfo) {
 				defer func() {
 					peersConnected.Done()
 					peersLk.Lock()
@@ -158,7 +157,7 @@ func (node *Node) RetrieveFromBestCandidate(
 					log.Errorf("Couldn't connect to bootstrap peer %s", ai)
 					return
 				}
-			}()
+			}(ai)
 		}
 		peersConnected.Wait()
 
