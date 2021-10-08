@@ -109,9 +109,6 @@ func (stats *IPFSRetrievalStats) GetAverageBytesPerSecond() uint64 {
 	return uint64(float64(stats.ByteSize) / stats.Duration.Seconds())
 }
 
-// NOTE (6 Oct 2021) - presently, if selNode is specified, then cfg.tryIPFS will
-// be silently ignored, and an ipfs retrieval will not be attempted. This will
-// be fixed very soon.
 func (node *Node) RetrieveFromBestCandidate(
 	ctx context.Context,
 	fc *filclient.FilClient,
@@ -121,9 +118,6 @@ func (node *Node) RetrieveFromBestCandidate(
 	cfg CandidateSelectionConfig,
 ) (RetrievalStats, error) {
 	// Try IPFS first, if requested
-	//
-	// TODO (6 Oct 2021): we should only check cfg.tryIPFS here in the future
-	// (see function comment)
 	if cfg.tryIPFS && (selNode == nil || selNode.IsNull()) {
 		log.Info("Searching IPFS for CID...")
 

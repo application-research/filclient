@@ -324,9 +324,13 @@ var retrieveFileCmd = &cli.Command{
 
 		noIPFS := cctx.Bool(flagNoIPFS.Name)
 
-		// --datamodel-path-selector implies --no-ipfs
-		if cctx.String(flagDmPathSel.Name) != "" {
-			noIPFS = true
+		// It's a conflict if --datamodel-path-selector is specified with
+		// --no-ipfs explicitly set to false
+		dmPathSelIsSet := cctx.IsSet(flagDmPathSel.Name)
+		noIPFSIsSet := cctx.IsSet(flagNoIPFS.Name)
+		noIPFSIsExplicitlyFalse := noIPFSIsSet && !noIPFS
+		if dmPathSelIsSet && noIPFSIsExplicitlyFalse {
+			return xerrors.Errorf("%s must be run with %s", flagDmPathSel.Name, flagNoIPFS.Name)
 		}
 
 		c, err := cid.Decode(cidStr)
