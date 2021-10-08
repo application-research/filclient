@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/application-research/filclient"
 	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
@@ -28,28 +27,42 @@ Max Piece Size: %v
 	)
 }
 
-func printRetrievalStats(stats *filclient.RetrievalStats) {
-	fmt.Printf(`RETRIEVAL STATS
+func printRetrievalStats(stats RetrievalStats) {
+	switch stats := stats.(type) {
+	case *FILRetrievalStats:
+		fmt.Printf(`RETRIEVAL STATS (FIL)
 -----
 Size:          %v (%v)
-Total Payment: %v (%v)
-Ask Price:     %v (%v)
-Num Payments:  %v
 Duration:      %v
 Average Speed: %v (%v/s)
+Ask Price:     %v (%v)
+Total Payment: %v (%v)
+Num Payments:  %v
 Peer:          %v
 `,
-		stats.Size, humanize.IBytes(stats.Size),
-		stats.TotalPayment, types.FIL(stats.TotalPayment),
-		stats.AskPrice, types.FIL(stats.AskPrice),
-		stats.NumPayments,
-		stats.Duration,
-		stats.AverageSpeed, humanize.IBytes(stats.AverageSpeed),
-		stats.Peer,
-	)
+			stats.Size, humanize.IBytes(stats.Size),
+			stats.Duration,
+			stats.AverageSpeed, humanize.IBytes(stats.AverageSpeed),
+			stats.AskPrice, types.FIL(stats.AskPrice),
+			stats.TotalPayment, types.FIL(stats.TotalPayment),
+			stats.NumPayments,
+			stats.Peer,
+		)
+	case *IPFSRetrievalStats:
+		fmt.Printf(`RETRIEVAL STATS (IPFS)
+-----
+Size:          %v (%v)
+Duration:      %v
+Average Speed: %v
+`,
+			stats.ByteSize, humanize.IBytes(stats.ByteSize),
+			stats.Duration,
+			stats.GetAverageBytesPerSecond(),
+		)
+	}
 }
 
-func printQueryResponse(query *retrievalmarket.QueryResponse) {
+func printQueryResponse(query *retrievalmarket.QueryResponse, availableOnIPFS bool) {
 	var status string
 	switch query.Status {
 	case retrievalmarket.QueryResponseAvailable:
@@ -100,5 +113,9 @@ Max Payment Interval Increase: %v (%v)
 
 	if query.Message != "" {
 		fmt.Printf("Message: %v\n", query.Message)
+	}
+
+	if availableOnIPFS {
+		fmt.Printf("-----\nAvaiable on IPFS")
 	}
 }

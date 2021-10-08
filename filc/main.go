@@ -4,18 +4,33 @@ import (
 	"fmt"
 	"os"
 
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
+	"go.uber.org/zap/zapcore"
 )
+
+var log = logging.Logger("filc")
 
 func main() {
 	//--system dt-impl --system dt-chanmon --system dt_graphsync --system graphsync --system data_transfer_network debug
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("filclient", "debug")
+	logging.SetPrimaryCore(zapcore.NewCore(zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
+		MessageKey: "message",
+		TimeKey:    "time",
+		LevelKey:   "level",
+
+		EncodeLevel: zapcore.CapitalColorLevelEncoder,
+		EncodeTime:  zapcore.TimeEncoderOfLayout("15:04:05"),
+
+		ConsoleSeparator: "  ",
+	}), os.Stdout, zapcore.InfoLevel))
+	logging.SetLogLevel("filc", "debug")
+	defer log.Sync()
+	// logging.SetLogLevel("dt-impl", "debug")
+	// logging.SetLogLevel("dt-chanmon", "debug")
+	// logging.SetLogLevel("dt_graphsync", "debug")
+	// logging.SetLogLevel("data_transfer_network", "debug")
+	// logging.SetLogLevel("filclient", "debug")
 	app := cli.NewApp()
 
 	app.Commands = []*cli.Command{
