@@ -26,6 +26,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	crypto "github.com/libp2p/go-libp2p-crypto"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -165,7 +167,12 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		return nil, err
 	}
 
-	bsnet := bsnet.NewFromIpfsHost(h, nil)
+	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix, fullrt.DHTOption(dht.Datastore(ds), dht.Mode(dht.ModeClient), dht.BucketSize(20), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)))
+	if err != nil {
+		return nil, err
+	}
+
+	bsnet := bsnet.NewFromIpfsHost(h, frt)
 	bswap := bitswap.New(ctx, bsnet, bstore)
 
 	wallet, err := setupWallet(walletPath(cfgdir))

@@ -29,6 +29,7 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	textselector "github.com/ipld/go-ipld-selector-text-lite"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -289,11 +290,15 @@ var retrieveFileCmd = &cli.Command{
 	Description: "Retrieve a file by CID from a miner. If desired, multiple miners can be specified as fallbacks in case of a failure (comma-separated, no spaces).",
 	ArgsUsage:   "<cid>",
 	Flags: []cli.Flag{
-		flagMinersRequired,
+		flagMiners,
 		flagOutput,
+		flagNoIPFS,
 		flagDmPathSel,
 	},
 	Action: func(cctx *cli.Context) error {
+
+		// Parse command input
+
 		cidStr := cctx.Args().First()
 		if cidStr == "" {
 			return fmt.Errorf("please specify a CID to retrieve")
@@ -317,10 +322,23 @@ var retrieveFileCmd = &cli.Command{
 			}
 		}
 
-		root, err := cid.Decode(cidStr)
+		noIPFS := cctx.Bool(flagNoIPFS.Name)
+
+		// It's a conflict if --datamodel-path-selector is specified with
+		// --no-ipfs explicitly set to false
+		dmPathSelIsSet := cctx.IsSet(flagDmPathSel.Name)
+		noIPFSIsSet := cctx.IsSet(flagNoIPFS.Name)
+		noIPFSIsExplicitlyFalse := noIPFSIsSet && !noIPFS
+		if dmPathSelIsSet && noIPFSIsExplicitlyFalse {
+			return xerrors.Errorf("%s must be run with %s", flagDmPathSel.Name, flagNoIPFS.Name)
+		}
+
+		c, err := cid.Decode(cidStr)
 		if err != nil {
 			return err
 		}
+
+		// Get subselector node
 
 		var selNode ipld.Node
 		if dmSelText != "" {
@@ -343,6 +361,8 @@ var retrieveFileCmd = &cli.Command{
 			selNode = selspec.Node()
 		}
 
+		// Set up node and filclient
+
 		ddir := ddir(cctx)
 
 		node, err := setup(cctx.Context, ddir)
@@ -356,46 +376,43 @@ var retrieveFileCmd = &cli.Command{
 		}
 		defer closer()
 
-		// Attempt the file retrieval from each miner
-		var retrievalDone bool
-		for _, miner := range miners {
-			msg := fmt.Sprintf("attempting retrieval with miner %s => root %s", miner, root)
-			if dmSelText != "" {
-				msg += " => selector " + string(dmSelText)
-			}
-			fmt.Println(msg)
+		// Collect retrieval candidates and config. If one or more miners are
+		// provided, use those with the requested cid as the root cid as the
+		// candidate list. Otherwise, we can use the auto retrieve API endpoint
+		// to automatically find some candidates to retrieve from.
 
-			ask, err := fc.RetrievalQuery(cctx.Context, miner, root)
+		var candidates []RetrievalCandidate
+		if len(miners) > 0 {
+			for _, miner := range miners {
+				candidates = append(candidates, RetrievalCandidate{
+					Miner:   miner,
+					RootCid: c,
+				})
+			}
+		} else {
+			endpoint := "https://api.estuary.tech/retrieval-candidates" // TODO: don't hard code
+			candidates_, err := node.GetRetrievalCandidates(endpoint, c)
 			if err != nil {
-				fmt.Println(err)
-				continue
+				return err
 			}
 
-			proposal, err := retrievehelper.RetrievalProposalForAsk(ask, root, selNode)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			printRetrievalStats(stats)
-			retrievalDone = true
-			break
+			candidates = candidates_
 		}
 
-		if !retrievalDone {
-			// none of the miners worked
-			return xerrors.New("retrieval failed for all miners")
+		// Do the retrieval
+
+		stats, err := node.RetrieveFromBestCandidate(cctx.Context, fc, c, selNode, candidates, CandidateSelectionConfig{
+			tryIPFS: !noIPFS,
+		})
+		if err != nil {
+			return err
 		}
 
-		fmt.Println("Saving output to ", output)
+		printRetrievalStats(stats)
 
-		dserv := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
+		// Save the output
+
+		dservOffline := merkledag.NewDAGService(blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore)))
 
 		// if we used a selector - need to find the sub-root the user actually wanted to retrieve
 		if dmSelText != "" {
@@ -405,8 +422,8 @@ var retrieveFileCmd = &cli.Command{
 			selspec, _ := textselector.SelectorSpecFromPath(dmSelText, nil) //nolint:errcheck
 			if err := retrievehelper.TraverseDag(
 				cctx.Context,
-				dserv,
-				root,
+				dservOffline,
+				c,
 				selspec.Node(),
 				func(p traversal.Progress, n ipld.Node, r traversal.VisitReason) error {
 					if r == traversal.VisitReason_SelectionMatch {
@@ -420,7 +437,7 @@ var retrieveFileCmd = &cli.Command{
 							return xerrors.Errorf("cidlink cast unexpectedly failed on '%s'", p.LastBlock.Link.String())
 						}
 
-						root = cidLnk.Cid
+						c = cidLnk.Cid
 						subRootFound = true
 					}
 					return nil
@@ -430,21 +447,27 @@ var retrieveFileCmd = &cli.Command{
 			}
 
 			if !subRootFound {
-				return xerrors.Errorf("path selection '%s' does not match a node within %s", dmSelText, root)
+				return xerrors.Errorf("path selection '%s' does not match a node within %s", dmSelText, c)
 			}
 		}
 
-		dnode, err := dserv.Get(cctx.Context, root)
+		dnode, err := dservOffline.Get(cctx.Context, c)
 		if err != nil {
 			return err
 		}
 
-		ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dserv, dnode)
+		ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dservOffline, dnode)
 		if err != nil {
 			return err
 		}
 
-		return files.WriteTo(ufsFile, output)
+		if err := files.WriteTo(ufsFile, output); err != nil {
+			return err
+		}
+
+		fmt.Println("Saved output to", output)
+
+		return nil
 	},
 }
 
@@ -453,7 +476,7 @@ var queryRetrievalCmd = &cli.Command{
 	Usage:     "Query retrieval information for a CID",
 	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
-		flagMinerRequired,
+		flagMiner,
 	},
 	Action: func(cctx *cli.Context) error {
 
@@ -474,18 +497,42 @@ var queryRetrievalCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
-		fc, closer, err := getClient(cctx, ddir)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		query, err := fc.RetrievalQuery(cctx.Context, miner, cid)
+		nd, err := setup(cctx.Context, ddir)
 		if err != nil {
 			return err
 		}
 
-		printQueryResponse(query)
+		dht, err := dht.New(cctx.Context, nd.Host, dht.Mode(dht.ModeClient))
+		if err != nil {
+			return err
+		}
+
+		providers, err := dht.FindProviders(cctx.Context, cid)
+		if err != nil {
+			return err
+		}
+
+		availableOnIPFS := len(providers) != 0
+
+		if miner != address.Undef {
+			fc, closer, err := clientFromNode(cctx, nd, ddir)
+			if err != nil {
+				return err
+			}
+			defer closer()
+
+			query, err := fc.RetrievalQuery(cctx.Context, miner, cid)
+			if err != nil {
+				return err
+			}
+
+			printQueryResponse(query, availableOnIPFS)
+		} else {
+			fmt.Println("No miner specified")
+			if availableOnIPFS {
+				fmt.Println("Available on IPFS")
+			}
+		}
 
 		return nil
 	},

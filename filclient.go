@@ -41,7 +41,7 @@ import (
 	gsnet "github.com/ipfs/go-graphsync/network"
 	storeutil "github.com/ipfs/go-graphsync/storeutil"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	car "github.com/ipld/go-car"
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"

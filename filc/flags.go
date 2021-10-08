@@ -33,7 +33,11 @@ var flagOutput = &cli.StringFlag{
 	Aliases: []string{"o"},
 }
 
+var flagNoIPFS = &cli.BoolFlag{
+	Name: "no-ipfs",
+}
+
 var flagDmPathSel = &cli.StringFlag{
-       Name:  "datamodel-path-selector",
-       Usage: "a rudimentary (DM-level-only) text-path selector, allowing for sub-selection within a deal",
+	Name:  "datamodel-path-selector",
+	Usage: "a rudimentary (DM-level-only) text-path selector, allowing for sub-selection within a deal",
 }
