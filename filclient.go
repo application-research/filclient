@@ -83,8 +83,6 @@ type FilClient struct {
 	dataTransfer datatransfer.Manager
 
 	computePieceComm GetPieceCommFunc
-
-	RetrievalProgressLogging bool
 }
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
