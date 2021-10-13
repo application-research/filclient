@@ -93,19 +93,71 @@ type FilClient struct {
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
-func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
+type Config struct {
+	DataDir              string
+	GraphsyncOpts        []gsimpl.Option
+	Api                  api.Gateway
+	Wallet               *wallet.LocalWallet
+	Addr                 address.Address
+	Blockstore           blockstore.Blockstore
+	Datastore            datastore.Batching
+	Host                 host.Host
+	ChannelMonitorConfig channelmonitor.Config
+}
+
+func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
+
+	cfg := &Config{
+		Host:       h,
+		Api:        api,
+		Wallet:     w,
+		Addr:       addr,
+		Blockstore: bs,
+		Datastore:  ds,
+		DataDir:    ddir,
+		GraphsyncOpts: []gsimpl.Option{
+			gsimpl.MaxInProgressIncomingRequests(200),
+			gsimpl.MaxInProgressOutgoingRequests(200),
+			gsimpl.MaxMemoryResponder(8 << 30),
+			gsimpl.MaxMemoryPerPeerResponder(32 << 20),
+			gsimpl.MaxInProgressIncomingRequestsPerPeer(20),
+			gsimpl.MessageSendRetries(2),
+			gsimpl.SendMessageTimeout(2 * time.Minute),
+		},
+		ChannelMonitorConfig: channelmonitor.Config{
+
+			AcceptTimeout:          time.Hour * 24,
+			RestartDebounce:        time.Second * 10,
+			RestartBackoff:         time.Second * 20,
+			MaxConsecutiveRestarts: 15,
+			//RestartAckTimeout:      time.Second * 30,
+			CompleteTimeout: time.Minute * 40,
+
+			// Called when a restart completes successfully
+			//OnRestartComplete func(id datatransfer.ChannelID)
+		},
+	}
+
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	return NewClientWithConfig(cfg)
+}
+
+func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	ctx, shutdown := context.WithCancel(context.Background())
 
-	mpusher := NewMsgPusher(api, w)
+	mpusher := NewMsgPusher(cfg.Api, cfg.Wallet)
 
-	smapi := rpcstmgr.NewRPCStateManager(api)
+	smapi := rpcstmgr.NewRPCStateManager(cfg.Api)
 
-	pchds := namespace.Wrap(ds, datastore.NewKey("paych"))
+	pchds := namespace.Wrap(cfg.Datastore, datastore.NewKey("paych"))
 	store := paychmgr.NewStore(pchds)
 
 	papi := &paychApiProvider{
-		Gateway: api,
-		wallet:  w,
+		Gateway: cfg.Api,
+		wallet:  cfg.Wallet,
 		mp:      mpusher,
 	}
 
@@ -115,48 +167,22 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 	}
 
 	gse := gsimpl.New(context.Background(),
-		gsnet.NewFromLibp2pHost(h),
-		storeutil.LinkSystemForBlockstore(bs),
-		gsimpl.MaxInProgressIncomingRequests(200),
-		gsimpl.MaxInProgressOutgoingRequests(200),
-		gsimpl.MaxMemoryResponder(8<<30),
-		gsimpl.MaxMemoryPerPeerResponder(32<<20),
-		gsimpl.MaxInProgressIncomingRequestsPerPeer(20),
-		gsimpl.MessageSendRetries(2),
-		gsimpl.SendMessageTimeout(2*time.Minute),
+		gsnet.NewFromLibp2pHost(cfg.Host),
+		storeutil.LinkSystemForBlockstore(cfg.Blockstore),
+		cfg.GraphsyncOpts...,
 	)
 
-	dtn := dtnet.NewFromLibp2pHost(h)
-	tpt := gst.NewTransport(h.ID(), gse, dtn)
+	dtn := dtnet.NewFromLibp2pHost(cfg.Host)
+	tpt := gst.NewTransport(cfg.Host.ID(), gse, dtn)
 
-	dtRestartConfig := dtimpl.ChannelRestartConfig(channelmonitor.Config{
-		/* old values for old stuff
-		MonitorPushChannels:    true,
-		AcceptTimeout:          time.Second * 30,
-		MinBytesTransferred:    4 << 10,
-		ChecksPerInterval:      20,
-		RestartBackoff:         time.Second * 20,
-		MaxConsecutiveRestarts: 10,
-		CompleteTimeout:        time.Second * 90,
-		*/
+	dtRestartConfig := dtimpl.ChannelRestartConfig(cfg.ChannelMonitorConfig)
 
-		AcceptTimeout:          time.Hour * 24,
-		RestartDebounce:        time.Second * 10,
-		RestartBackoff:         time.Second * 20,
-		MaxConsecutiveRestarts: 15,
-		//RestartAckTimeout:      time.Second * 30,
-		CompleteTimeout: time.Minute * 40,
-
-		// Called when a restart completes successfully
-		//OnRestartComplete func(id datatransfer.ChannelID)
-	})
-
-	cidlistsdirPath := filepath.Join(ddir, "cidlistsdir")
+	cidlistsdirPath := filepath.Join(cfg.DataDir, "cidlistsdir")
 	if err := os.MkdirAll(cidlistsdirPath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to initialize cidlistsdir: %w", err)
 	}
 
-	mgr, err := dtimpl.NewDataTransfer(ds, cidlistsdirPath, dtn, tpt, dtRestartConfig)
+	mgr, err := dtimpl.NewDataTransfer(cfg.Datastore, cidlistsdirPath, dtn, tpt, dtRestartConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -193,11 +219,11 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 	*/
 
 	return &FilClient{
-		host:             h,
-		api:              api,
-		wallet:           w,
-		ClientAddr:       addr,
-		blockstore:       bs,
+		host:             cfg.Host,
+		api:              cfg.Api,
+		wallet:           cfg.Wallet,
+		ClientAddr:       cfg.Addr,
+		blockstore:       cfg.Blockstore,
 		dataTransfer:     mgr,
 		pchmgr:           pchmgr,
 		mpusher:          mpusher,
