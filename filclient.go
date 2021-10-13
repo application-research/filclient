@@ -84,6 +84,8 @@ type FilClient struct {
 	dataTransfer datatransfer.Manager
 
 	computePieceComm GetPieceCommFunc
+
+	graphSync graphsync.GraphExchange
 }
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
@@ -884,6 +886,11 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 	proposal *retrievalmarket.DealProposal,
 	progressCallback func(bytesReceived uint64),
 ) (*RetrievalStats, error) {
+
+	if progressCallback == nil {
+		progressCallback = func(bytesReceived uint64) {}
+	}
+
 	log.Infof("starting retrieval with miner: %s", miner)
 
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
@@ -998,9 +1005,8 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 				log.Debugf("unrecognized voucher response type: %v", resType)
 			}
 		case datatransfer.DataReceivedProgress:
-			if progressCallback != nil {
-				progressCallback(state.Received())
-			}
+			progressCallback(state.Received())
+
 		case datatransfer.DataReceived:
 			// Ignore this
 		case datatransfer.FinishTransfer:
