@@ -37,7 +37,8 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
-	graphsync "github.com/ipfs/go-graphsync/impl"
+	"github.com/ipfs/go-graphsync"
+	gsimpl "github.com/ipfs/go-graphsync/impl"
 	gsnet "github.com/ipfs/go-graphsync/network"
 	storeutil "github.com/ipfs/go-graphsync/storeutil"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -86,6 +87,8 @@ type FilClient struct {
 	computePieceComm GetPieceCommFunc
 
 	RetrievalProgressLogging bool
+
+	graphSync graphsync.GraphExchange
 }
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
@@ -111,13 +114,16 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		return nil, err
 	}
 
-	gse := graphsync.New(context.Background(),
+	gse := gsimpl.New(context.Background(),
 		gsnet.NewFromLibp2pHost(h),
 		storeutil.LinkSystemForBlockstore(bs),
-		graphsync.MaxInProgressIncomingRequests(200),
-		graphsync.MaxInProgressOutgoingRequests(200),
-		graphsync.MaxMemoryResponder(8<<30),
-		graphsync.MaxMemoryPerPeerResponder(32<<20),
+		gsimpl.MaxInProgressIncomingRequests(200),
+		gsimpl.MaxInProgressOutgoingRequests(200),
+		gsimpl.MaxMemoryResponder(8<<30),
+		gsimpl.MaxMemoryPerPeerResponder(32<<20),
+		gsimpl.MaxInProgressIncomingRequestsPerPeer(20),
+		gsimpl.MessageSendRetries(2),
+		gsimpl.SendMessageTimeout(2*time.Minute),
 	)
 
 	dtn := dtnet.NewFromLibp2pHost(h)
@@ -196,6 +202,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		pchmgr:           pchmgr,
 		mpusher:          mpusher,
 		computePieceComm: GeneratePieceCommitment,
+		graphSync:        gse,
 	}, nil
 }
 
@@ -599,6 +606,10 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 
 func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[datatransfer.ChannelID]datatransfer.ChannelState, error) {
 	return fc.dataTransfer.InProgressChannels(ctx)
+}
+
+func (fc *FilClient) GraphSyncStats() graphsync.Stats {
+	return fc.graphSync.Stats()
 }
 
 func (fc *FilClient) TransferStatus(ctx context.Context, chanid *datatransfer.ChannelID) (*ChannelState, error) {
