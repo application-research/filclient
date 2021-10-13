@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -85,8 +84,6 @@ type FilClient struct {
 	dataTransfer datatransfer.Manager
 
 	computePieceComm GetPieceCommFunc
-
-	RetrievalProgressLogging bool
 
 	graphSync graphsync.GraphExchange
 }
@@ -875,7 +872,25 @@ type RetrievalStats struct {
 	//TimeToFirstByte time.Duration
 }
 
-func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address, proposal *retrievalmarket.DealProposal) (*RetrievalStats, error) {
+func (fc *FilClient) RetrieveContent(
+	ctx context.Context,
+	miner address.Address,
+	proposal *retrievalmarket.DealProposal,
+) (*RetrievalStats, error) {
+	return fc.RetrieveContentWithProgressCallback(ctx, miner, proposal, nil)
+}
+
+func (fc *FilClient) RetrieveContentWithProgressCallback(
+	ctx context.Context,
+	miner address.Address,
+	proposal *retrievalmarket.DealProposal,
+	progressCallback func(bytesReceived uint64),
+) (*RetrievalStats, error) {
+
+	if progressCallback == nil {
+		progressCallback = func(bytesReceived uint64) {}
+	}
+
 	log.Infof("starting retrieval with miner: %s", miner)
 
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
@@ -917,9 +932,6 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 	// The next nonce (incrementing unique ID starting from 0) for the next voucher
 	var nonce uint64 = 0
-
-	// Used to limit prints to the console about received status
-	lastReceivedUpdate := time.Now()
 
 	// dtRes receives either an error (failure) or nil (success) which is waited
 	// on and handled below before exiting the function
@@ -993,10 +1005,8 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 				log.Debugf("unrecognized voucher response type: %v", resType)
 			}
 		case datatransfer.DataReceivedProgress:
-			if fc.RetrievalProgressLogging && time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
-				fmt.Printf("received: %v (%v)\r", state.Received(), humanize.IBytes(state.Received()))
-				lastReceivedUpdate = time.Now()
-			}
+			progressCallback(state.Received())
+
 		case datatransfer.DataReceived:
 			// Ignore this
 		case datatransfer.FinishTransfer:

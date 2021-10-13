@@ -17,6 +17,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	ipldformat "github.com/ipfs/go-ipld-format"
@@ -329,8 +330,11 @@ func (node *Node) RetrieveFromBestCandidate(
 	// will still be nil after the loop finishes
 	var stats RetrievalStats = nil
 	for _, query := range queries {
-		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s FIL)", query.Candidate.Miner, query.Candidate.RootCid, totalCost(query.Response))
-		log.Infof("Using selector %s")
+		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s)", query.Candidate.Miner, query.Candidate.RootCid, types.FIL(totalCost(query.Response)))
+
+		if selNode != nil && !selNode.IsNull() {
+			log.Infof("Using selector %s", selNode)
+		}
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, selNode)
 		if err != nil {
@@ -338,7 +342,14 @@ func (node *Node) RetrieveFromBestCandidate(
 			continue
 		}
 
-		stats_, err := fc.RetrieveContent(ctx, query.Candidate.Miner, proposal)
+		const progressLogInterval = time.Second / 5
+		lastProgressLog := time.Now()
+		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
+			if time.Since(lastProgressLog) > progressLogInterval {
+				lastProgressLog = time.Now()
+				fmt.Printf("%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
+			}
+		})
 		if err != nil {
 			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
