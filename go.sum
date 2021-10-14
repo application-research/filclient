@@ -296,8 +296,8 @@ github.com/filecoin-project/go-crypto v0.0.0-20191218222705-effae4ea9f03 h1:2pMX
 github.com/filecoin-project/go-crypto v0.0.0-20191218222705-effae4ea9f03/go.mod h1:+viYnvGtUTgJRdy6oaeF4MTFKAfatX071MPDPBL11EQ=
 github.com/filecoin-project/go-data-transfer v1.0.1/go.mod h1:UxvfUAY9v3ub0a21BSK9u3pB2aq30Y0KMsG+w9/ysyo=
 github.com/filecoin-project/go-data-transfer v1.11.1/go.mod h1:2MitLI0ebCkLlPKM7NRggP/t9d+gCcREUKkCKqWRCwU=
-github.com/filecoin-project/go-data-transfer v1.11.2 h1:nE1CK4lfsuXnsqfj1nCslRSjZlDhE8kaSsfc8IhQrXs=
-github.com/filecoin-project/go-data-transfer v1.11.2/go.mod h1:2MitLI0ebCkLlPKM7NRggP/t9d+gCcREUKkCKqWRCwU=
+github.com/filecoin-project/go-data-transfer v1.11.3 h1:e1gcocGINJ47UP68GShJDeNC2hAQlCTy+SnPVhGvD1M=
+github.com/filecoin-project/go-data-transfer v1.11.3/go.mod h1:2MitLI0ebCkLlPKM7NRggP/t9d+gCcREUKkCKqWRCwU=
 github.com/filecoin-project/go-ds-versioning v0.1.0 h1:y/X6UksYTsK8TLCI7rttCKEvl8btmWxyFMEeeWGUxIQ=
 github.com/filecoin-project/go-ds-versioning v0.1.0/go.mod h1:mp16rb4i2QPmxBnmanUx8i/XANp+PFCCJWiAb+VW4/s=
 github.com/filecoin-project/go-fil-commcid v0.0.0-20200716160307-8f644712406f/go.mod h1:Eaox7Hvus1JgPrL5+M3+h7aSPHc0cVqpSxA+TxIEpZQ=
@@ -676,10 +676,8 @@ github.com/ipfs/go-graphsync v0.4.2/go.mod h1:/VmbZTUdUMTbNkgzAiCEucIIAU3BkLE2cZ
 github.com/ipfs/go-graphsync v0.4.3/go.mod h1:mPOwDYv128gf8gxPFgXnz4fNrSYPsWyqisJ7ych+XDY=
 github.com/ipfs/go-graphsync v0.10.0/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
 github.com/ipfs/go-graphsync v0.10.1/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
-github.com/ipfs/go-graphsync v0.10.2 h1:LFox7892ld9mZ+2ePKewFYwdhN+OIfFm1/FYpHy/WV4=
-github.com/ipfs/go-graphsync v0.10.2/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
-github.com/ipfs/go-graphsync v0.10.3 h1:vBjuUqiFM466oKmz6t5pATr3UsYTSTndlqLOjx7nT9s=
-github.com/ipfs/go-graphsync v0.10.3/go.mod h1:oei4tnWAKnZ6LPnapZGPYVVbyiKV1UP3f8BeLU7Z4JQ=
+github.com/ipfs/go-graphsync v0.10.4 h1:1WZhyOPxgxLvHTIC2GoLltaBrjZ+JuXC2oKAEiX8f3Y=
+github.com/ipfs/go-graphsync v0.10.4/go.mod h1:oei4tnWAKnZ6LPnapZGPYVVbyiKV1UP3f8BeLU7Z4JQ=
 github.com/ipfs/go-hamt-ipld v0.1.1/go.mod h1:1EZCr2v0jlCnhpa+aZ0JZYp8Tt2w16+JJOAVz17YcDk=
 github.com/ipfs/go-ipfs-blockstore v0.0.1/go.mod h1:d3WClOmRQKFnJ0Jz/jj/zmksX0ma1gROTlovZKBmN08=
 github.com/ipfs/go-ipfs-blockstore v0.1.0/go.mod h1:5aD0AvHPi7mZc6Ci1WCAhiBQu2IsfTduLl+422H6Rqw=
@@ -778,7 +776,6 @@ github.com/ipfs/go-peertaskqueue v0.0.4/go.mod h1:03H8fhyeMfKNFWqzYEVyMbcPUeYrqP
 github.com/ipfs/go-peertaskqueue v0.1.0/go.mod h1:Jmk3IyCcfl1W3jTW3YpghSwSEC6IJ3Vzz/jUmWw8Z0U=
 github.com/ipfs/go-peertaskqueue v0.1.1/go.mod h1:Jmk3IyCcfl1W3jTW3YpghSwSEC6IJ3Vzz/jUmWw8Z0U=
 github.com/ipfs/go-peertaskqueue v0.2.0/go.mod h1:5/eNrBEbtSKWCG+kQK8K8fGNixoYUnr+P7jivavs9lY=
-github.com/ipfs/go-peertaskqueue v0.4.0 h1:x1hFgA4JOUJ3ntPfqLRu6v4k6kKL0p07r3RSg9JNyHI=
 github.com/ipfs/go-peertaskqueue v0.4.0/go.mod h1:KL9F49hXJMoXCad8e5anivjN+kWdr+CyGcyh4K6doLc=
 github.com/ipfs/go-peertaskqueue v0.6.0 h1:BT1/PuNViVomiz1PnnP5+WmKsTNHrxIDvkZrkj4JhOg=
 github.com/ipfs/go-peertaskqueue v0.6.0/go.mod h1:M/akTIE/z1jGNXMU7kFB4TeSEFvj68ow0Rrb04donIU=
