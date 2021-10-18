@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"sort"
 	"sync"
@@ -150,7 +151,7 @@ func (node *Node) RetrieveFromBestCandidate(
 					peersConnected.Done()
 					peersLk.Lock()
 					peersConnectedCount++
-					fmt.Printf("%v/%v\r", peersConnectedCount, len(bootstrapPeers))
+					fmt.Fprintf(os.Stderr, "%v/%v\r", peersConnectedCount, len(bootstrapPeers))
 					peersLk.Unlock()
 				}()
 
@@ -218,7 +219,7 @@ func (node *Node) RetrieveFromBestCandidate(
 						nodeSize = 0
 					}
 					bytesRetrieved += nodeSize
-					fmt.Printf("%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
+					fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
 					progressLk.Unlock()
 
 					if c.Type() == cid.Raw {
@@ -283,7 +284,7 @@ func (node *Node) RetrieveFromBestCandidate(
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
 			checked++
-			fmt.Printf("%v/%v\r", checked, len(candidates))
+			fmt.Fprintf(os.Stderr, "%v/%v\r", checked, len(candidates))
 			queriesLk.Unlock()
 		}()
 	}
@@ -343,7 +344,7 @@ func (node *Node) RetrieveFromBestCandidate(
 		}
 
 		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
-			fmt.Printf("%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
+			fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
 		})
 		if err != nil {
 			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)

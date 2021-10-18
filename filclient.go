@@ -1033,16 +1033,16 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 				case retrievalmarket.DealStatusCompleted:
 					finish(nil)
 				default:
-					log.Debugf("other voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
+					log.Debugf("in-progress voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
 				}
 			default:
-				log.Debugf("other voucher result type: %v", resType)
+				log.Debugf("in-progress voucher result type: %v", resType)
 			}
 		case datatransfer.DataReceived:
 		case datatransfer.DataReceivedProgress:
 			progressCallback(state.Received())
 		default:
-			log.Debugf("other event code: %v", event.Code)
+			log.Debugf("in-progress event code: %v", event.Code)
 		}
 	})
 	defer unsubscribe()
