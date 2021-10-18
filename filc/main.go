@@ -23,7 +23,7 @@ func main() {
 		EncodeTime:  zapcore.TimeEncoderOfLayout("15:04:05"),
 
 		ConsoleSeparator: "  ",
-	}), os.Stdout, zapcore.InfoLevel))
+	}), os.Stdout, zapcore.DebugLevel))
 	logging.SetLogLevel("filc", "debug")
 	defer log.Sync()
 	// logging.SetLogLevel("dt-impl", "debug")
