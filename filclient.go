@@ -1022,25 +1022,27 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					} else {
 						finish(fmt.Errorf("the miner requested payment even though this transaction was determined to be zero cost"))
 					}
+				case retrievalmarket.DealStatusRejected:
+					finish(fmt.Errorf("deal rejected: %s", resType.Message))
 				case retrievalmarket.DealStatusFundsNeededUnseal:
 					finish(fmt.Errorf("received unexpected payment request for unsealing data"))
+				case retrievalmarket.DealStatusCancelled:
+					finish(fmt.Errorf("deal cancelled: %s", resType.Message))
+				case retrievalmarket.DealStatusErrored:
+					finish(fmt.Errorf("deal errored: %s", resType.Message))
+				case retrievalmarket.DealStatusCompleted:
+					finish(nil)
 				default:
-					log.Debugf("unrecognized voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
+					log.Debugf("other voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
 				}
 			default:
-				log.Debugf("unrecognized voucher response type: %v", resType)
+				log.Debugf("other voucher result type: %v", resType)
 			}
+		case datatransfer.DataReceived:
 		case datatransfer.DataReceivedProgress:
 			progressCallback(state.Received())
-
-		case datatransfer.DataReceived:
-			// Ignore this
-		case datatransfer.FinishTransfer:
-			finish(nil)
-		case datatransfer.Cancel:
-			finish(fmt.Errorf("data transfer canceled"))
 		default:
-			log.Debugf("unrecognized data transfer event: %v", datatransfer.Events[event.Code])
+			log.Debugf("other event code: %v", event.Code)
 		}
 	})
 	defer unsubscribe()
@@ -1059,7 +1061,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 	select {
 	case err := <-dtRes:
 		if err != nil {
-			return nil, fmt.Errorf("data transfer error: %w", err)
+			return nil, fmt.Errorf("data transfer failed: %w", err)
 		}
 	case <-ctx.Done():
 		return nil, ctx.Err()

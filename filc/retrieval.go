@@ -342,13 +342,8 @@ func (node *Node) RetrieveFromBestCandidate(
 			continue
 		}
 
-		const progressLogInterval = time.Second / 5
-		lastProgressLog := time.Now()
 		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
-			if time.Since(lastProgressLog) > progressLogInterval {
-				lastProgressLog = time.Now()
-				fmt.Printf("%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
-			}
+			fmt.Printf("%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
 		})
 		if err != nil {
 			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
@@ -360,7 +355,7 @@ func (node *Node) RetrieveFromBestCandidate(
 	}
 
 	if stats == nil {
-		return nil, xerrors.New("retrieval failed: all miners failed to respond")
+		return nil, xerrors.New("retrieval failed for all miners")
 	}
 
 	log.Info("FIL retrieval succeeded")
