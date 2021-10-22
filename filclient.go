@@ -66,6 +66,8 @@ const QueryAskProtocol = "/fil/storage/ask/1.1.0"
 const DealStatusProtocol = "/fil/storage/status/1.1.0"
 const RetrievalQueryProtocol = "/fil/retrieval/qry/1.0.0"
 
+const maxTraversalLinks = 32 * (1 << 20)
+
 type FilClient struct {
 	mpusher *MsgPusher
 
@@ -120,6 +122,8 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 			gsimpl.MaxInProgressIncomingRequestsPerPeer(20),
 			gsimpl.MessageSendRetries(2),
 			gsimpl.SendMessageTimeout(2 * time.Minute),
+			gsimpl.MaxLinksPerIncomingRequests(maxTraversalLinks),
+			gsimpl.MaxLinksPerOutgoingRequests(maxTraversalLinks),
 		},
 		ChannelMonitorConfig: channelmonitor.Config{
 
@@ -445,7 +449,7 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 }
 
 func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
-	selectiveCar := car.NewSelectiveCar(context.Background(), bstore, []car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}})
+	selectiveCar := car.NewSelectiveCar(context.Background(), bstore, []car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}}, car.MaxTraversalLinks(maxTraversalLinks))
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
 		return cid.Undef, 0, err
