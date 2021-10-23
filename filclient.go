@@ -449,7 +449,13 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 }
 
 func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
-	selectiveCar := car.NewSelectiveCar(context.Background(), bstore, []car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}}, car.MaxTraversalLinks(maxTraversalLinks))
+	selectiveCar := car.NewSelectiveCar(
+		context.Background(),
+		bstore,
+		[]car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}},
+		car.MaxTraversalLinks(maxTraversalLinks),
+		car.TraverseLinksOnlyOnce(),
+	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
 		return cid.Undef, 0, err
@@ -475,7 +481,13 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 }
 
 func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
-	selectiveCar := car.NewSelectiveCar(context.Background(), bstore, []car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}})
+	selectiveCar := car.NewSelectiveCar(
+		context.Background(),
+		bstore,
+		[]car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}},
+		car.MaxTraversalLinks(maxTraversalLinks),
+		car.TraverseLinksOnlyOnce(),
+	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
 		return cid.Undef, 0, err
