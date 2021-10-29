@@ -1073,6 +1073,8 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 	chanid = newchid
 	chanidLk.Unlock()
 
+	defer fc.dataTransfer.CloseDataTransferChannel(ctx, chanid)
+
 	// Wait for the retrieval to finish before exiting the function
 	select {
 	case err := <-dtRes:
