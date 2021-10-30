@@ -313,17 +313,30 @@ func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*networ
 	defer s.Close()
 
 	areq := &network.AskRequest{maddr}
-
-	if err := cborutil.WriteCborRPC(s, areq); err != nil {
-		return nil, fmt.Errorf("failed to send query ask request: %w", err)
-	}
-
 	var resp network.AskResponse
-	if err := cborutil.ReadCborRPC(s, &resp); err != nil {
-		return nil, fmt.Errorf("failed to read query response: %w", err)
+	if err := doRpc(ctx, s, areq, &resp); err != nil {
+		return nil, fmt.Errorf("get ask rpc: %w", err)
 	}
 
 	return &resp, nil
+}
+
+func doRpc(ctx context.Context, s inet.Stream, req interface{}, resp interface{}) error {
+	dline, ok := ctx.Deadline()
+	if ok {
+		s.SetDeadline(dline)
+		defer s.SetDeadline(time.Time{})
+	}
+
+	if err := cborutil.WriteCborRPC(s, req); err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+
+	if err := cborutil.ReadCborRPC(s, resp); err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return nil
 }
 
 const epochsPerHour = 60 * 2
@@ -436,13 +449,10 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 
 	defer s.Close()
 
-	if err := cborutil.WriteCborRPC(s, netprop); err != nil {
-		return nil, fmt.Errorf("failed to write proposal to miner: %w", err)
-	}
-
 	var resp network.SignedResponse
-	if err := cborutil.ReadCborRPC(s, &resp); err != nil {
-		return nil, fmt.Errorf("failed to read response from miner: %w", err)
+
+	if err := doRpc(ctx, s, netprop, &resp); err != nil {
+		return nil, fmt.Errorf("send proposal rpc: %w", err)
 	}
 
 	return &resp, nil
@@ -542,13 +552,9 @@ func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, prop
 		return nil, err
 	}
 
-	if err := cborutil.WriteCborRPC(s, req); err != nil {
-		return nil, fmt.Errorf("failed to write status request: %w", err)
-	}
-
 	var resp network.DealStatusResponse
-	if err := cborutil.ReadCborRPC(s, &resp); err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+	if err := doRpc(ctx, s, req, &resp); err != nil {
+		return nil, fmt.Errorf("deal status rpc: %w", err)
 	}
 
 	// TODO: check the signatures and stuff?
@@ -852,13 +858,9 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 		PayloadCID: pcid,
 	}
 
-	if err := cborutil.WriteCborRPC(s, q); err != nil {
-		return nil, err
-	}
-
 	var resp retrievalmarket.QueryResponse
-	if err := cborutil.ReadCborRPC(s, &resp); err != nil {
-		return nil, err
+	if err := doRpc(ctx, s, q, &resp); err != nil {
+		return nil, fmt.Errorf("retrieval query rpc: %w", err)
 	}
 
 	return &resp, nil
