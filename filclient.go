@@ -102,6 +102,7 @@ type Config struct {
 	Datastore            datastore.Batching
 	Host                 host.Host
 	ChannelMonitorConfig channelmonitor.Config
+	RetrievalConfigurer  datatransfer.TransportConfigurer
 }
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
@@ -206,6 +207,12 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	err = mgr.RegisterVoucherResultType(&retrievalmarket.DealResponse{})
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.RetrievalConfigurer != nil {
+		if err := mgr.RegisterTransportConfigurer(&retrievalmarket.DealProposal{}, cfg.RetrievalConfigurer); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := mgr.Start(context.TODO()); err != nil {
