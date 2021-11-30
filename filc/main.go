@@ -10,6 +10,12 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+func init() {
+	if os.Getenv("FULLNODE_API_INFO") == "" {
+		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
+	}
+}
+
 var log = logging.Logger("filc")
 
 func main() {
