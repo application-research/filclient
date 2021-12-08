@@ -942,7 +942,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		progressCallback = func(bytesReceived uint64) {}
 	}
 
-	log.Infof("starting retrieval with miner: %s", miner)
+	log.Infof("Starting retrieval with miner: %s", miner)
 
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
 	defer span.End()
@@ -1006,18 +1006,30 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 			return
 		}
 
+		if len(event.Message) != 0 {
+			log.Debugf("Received event code %s (%v): %s", datatransfer.Events[event.Code], event.Code, event.Message)
+		} else {
+			log.Debugf("Received event code %s (%v)", datatransfer.Events[event.Code], event.Code)
+		}
+
 		switch event.Code {
 		case datatransfer.NewVoucherResult:
 			switch resType := state.LastVoucherResult().(type) {
 			case *retrievalmarket.DealResponse:
+				if len(resType.Message) != 0 {
+					log.Debugf("Received deal response voucher result %s (%v): %s", resType.Status, resType.Status, resType.Message)
+				} else {
+					log.Debugf("Received deal response voucher result %s (%v)", resType.Status, resType.Status)
+				}
+
 				switch resType.Status {
 				case retrievalmarket.DealStatusAccepted:
-					log.Info("deal accepted")
+					log.Info("Deal accepted")
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded:
 					if pchRequired {
-						log.Infof("sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
+						log.Infof("Sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
 
 						totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
 
@@ -1057,17 +1069,11 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					finish(fmt.Errorf("deal errored: %s", resType.Message))
 				case retrievalmarket.DealStatusCompleted:
 					finish(nil)
-				default:
-					log.Debugf("in-progress voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
 				}
-			default:
-				log.Debugf("in-progress voucher result type: %v", resType)
 			}
 		case datatransfer.DataReceived:
 		case datatransfer.DataReceivedProgress:
 			progressCallback(state.Received())
-		default:
-			log.Debugf("in-progress event code: %v", event.Code)
 		}
 	})
 	defer unsubscribe()

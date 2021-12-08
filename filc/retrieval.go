@@ -343,11 +343,19 @@ func (node *Node) RetrieveFromBestCandidate(
 			continue
 		}
 
-		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
+		var bytesReceived uint64
+		go func() {
+			for range time.Tick(time.Second / 20) {
+				fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
+			}
+		}()
+
+		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived_ uint64) {
+			bytesReceived = bytesReceived_
 			fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
 		})
 		if err != nil {
-			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
+			log.Errorf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
 		}
 
