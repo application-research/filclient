@@ -1006,14 +1006,22 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 			return
 		}
 
-		if len(event.Message) != 0 {
-			log.Debugf("Received event code %s (%v): %s", datatransfer.Events[event.Code], event.Code, event.Message)
-		} else {
-			log.Debugf("Received event code %s (%v)", datatransfer.Events[event.Code], event.Code)
-		}
+		silenceEventCode := false
+		eventCodeNotHandled := false
 
 		switch event.Code {
+		case datatransfer.Open:
+		case datatransfer.Accept:
+		case datatransfer.Restart:
+		case datatransfer.DataReceived:
+			silenceEventCode = true
+		case datatransfer.DataSent:
+		case datatransfer.Cancel:
+		case datatransfer.Error:
+		case datatransfer.CleanupComplete:
+		case datatransfer.NewVoucher:
 		case datatransfer.NewVoucherResult:
+
 			switch resType := state.LastVoucherResult().(type) {
 			case *retrievalmarket.DealResponse:
 				if len(resType.Message) != 0 {
@@ -1071,9 +1079,49 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					finish(nil)
 				}
 			}
-		case datatransfer.DataReceived:
+		case datatransfer.PauseInitiator:
+		case datatransfer.ResumeInitiator:
+		case datatransfer.PauseResponder:
+		case datatransfer.ResumeResponder:
+		case datatransfer.FinishTransfer:
+		case datatransfer.ResponderCompletes:
+		case datatransfer.ResponderBeginsFinalization:
+		case datatransfer.BeginFinalizing:
+		case datatransfer.Disconnected:
+		case datatransfer.Complete:
+		case datatransfer.CompleteCleanupOnRestart:
+		case datatransfer.DataQueued:
+		case datatransfer.DataQueuedProgress:
+		case datatransfer.DataSentProgress:
 		case datatransfer.DataReceivedProgress:
 			progressCallback(state.Received())
+			silenceEventCode = true
+		case datatransfer.RequestTimedOut:
+		case datatransfer.SendDataError:
+		case datatransfer.ReceiveDataError:
+		case datatransfer.TransferRequestQueued:
+		case datatransfer.RequestCancelled:
+		case datatransfer.Opened:
+		default:
+			eventCodeNotHandled = true
+		}
+
+		var eventString string
+		name := datatransfer.Events[event.Code]
+		code := event.Code
+		msg := event.Message
+		if len(event.Message) != 0 {
+			eventString = fmt.Sprintf("\"%s\" (%v): %s", name, code, msg)
+		} else {
+			eventString = fmt.Sprintf("\"%s\" (%v)", name, code)
+		}
+
+		if eventCodeNotHandled {
+			log.Warnf("Unhandled event %s", eventString)
+		} else {
+			if !silenceEventCode {
+				log.Debugf("Processed event %s", eventString)
+			}
 		}
 	})
 	defer unsubscribe()
