@@ -24,8 +24,6 @@ import (
 	ipldformat "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipld/go-ipld-prime"
-	"github.com/libp2p/go-libp2p-core/peer"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"golang.org/x/xerrors"
 )
 
@@ -124,52 +122,7 @@ func (node *Node) RetrieveFromBestCandidate(
 	if cfg.tryIPFS && (selNode == nil || selNode.IsNull()) {
 		log.Info("Searching IPFS for CID...")
 
-		log.Info("Bootstrapping DHT...")
-		bootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos()
-
-		dht, err := dht.New(
-			ctx,
-			node.Host,
-			dht.Mode(dht.ModeClient),
-		)
-		if err != nil {
-			// TODO: don't die here
-			return nil, err
-		}
-
-		// Connect to IPFS peers in parallel
-
-		var peersConnected sync.WaitGroup
-		var peersLk sync.Mutex
-		peersConnectedCount := 0
-
-		peersConnected.Add(len(bootstrapPeers))
-
-		for _, ai := range bootstrapPeers {
-			go func(ai peer.AddrInfo) {
-				defer func() {
-					peersConnected.Done()
-					peersLk.Lock()
-					peersConnectedCount++
-					fmt.Fprintf(os.Stderr, "%v/%v\r", peersConnectedCount, len(bootstrapPeers))
-					peersLk.Unlock()
-				}()
-
-				if err := node.Host.Connect(ctx, ai); err != nil {
-					log.Errorf("Couldn't connect to bootstrap peer %s", ai)
-					return
-				}
-			}(ai)
-		}
-		peersConnected.Wait()
-
-		if err := dht.Bootstrap(ctx); err != nil {
-			return nil, err
-		}
-
-		log.Infof("Finished bootstrapping, getting providers...")
-
-		providers, err := dht.FindProviders(ctx, c)
+		providers, err := node.DHT.FindProviders(ctx, c)
 		if err != nil {
 			// TODO: don't die here
 			return nil, err

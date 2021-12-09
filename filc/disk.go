@@ -126,8 +126,8 @@ func getClient(cctx *cli.Context, dir string) (*filclient.FilClient, func(), err
 type Node struct {
 	Host host.Host
 
-	Datastore datastore.Batching
-
+	Datastore  datastore.Batching
+	DHT        *dht.IpfsDHT
 	Blockstore blockstore.Blockstore
 	Bitswap    *bitswap.Bitswap
 
@@ -170,9 +170,12 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		dht.Mode(dht.ModeClient),
 		dht.QueryFilter(dht.PublicQueryFilter),
 		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
-		dht.RoutingTablePeerDiversityFilter(dht.NewRTPeerDiversityFilter(h, 2, 3)),
+		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
 	)
 	if err != nil {
+		return nil, err
+	}
+	if err := dht.Bootstrap(ctx); err != nil {
 		return nil, err
 	}
 
@@ -187,6 +190,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	return &Node{
 		Host:       h,
 		Blockstore: bstore,
+		DHT:        dht,
 		Datastore:  ds,
 		Bitswap:    bswap.(*bitswap.Bitswap),
 		Wallet:     wallet,
