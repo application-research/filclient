@@ -1025,9 +1025,9 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 			switch resType := state.LastVoucherResult().(type) {
 			case *retrievalmarket.DealResponse:
 				if len(resType.Message) != 0 {
-					log.Debugf("Received deal response voucher result %s (%v): %s", resType.Status, resType.Status, resType.Message)
+					log.Debugf("Received deal response voucher result %s (%v): %s\n\t%+v", resType.Status, resType.Status, resType.Message, resType)
 				} else {
-					log.Debugf("Received deal response voucher result %s (%v)", resType.Status, resType.Status)
+					log.Debugf("Received deal response voucher result %s (%v)\n\t%+v", resType.Status, resType.Status, resType)
 				}
 
 				switch resType.Status {
@@ -1069,8 +1069,8 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					}
 				case retrievalmarket.DealStatusRejected:
 					finish(fmt.Errorf("deal rejected: %s", resType.Message))
-				case retrievalmarket.DealStatusFundsNeededUnseal:
-					finish(fmt.Errorf("received unexpected payment request for unsealing data"))
+				case retrievalmarket.DealStatusFundsNeededUnseal, retrievalmarket.DealStatusUnsealing:
+					finish(fmt.Errorf("data is sealed"))
 				case retrievalmarket.DealStatusCancelled:
 					finish(fmt.Errorf("deal cancelled: %s", resType.Message))
 				case retrievalmarket.DealStatusErrored:
