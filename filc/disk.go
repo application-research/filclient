@@ -164,7 +164,17 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		return nil, err
 	}
 
-	dht := dht.NewDHTClient(ctx, h, ds)
+	dht, err := dht.New(
+		ctx,
+		h,
+		dht.Mode(dht.ModeClient),
+		dht.QueryFilter(dht.PublicQueryFilter),
+		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
+		dht.RoutingTablePeerDiversityFilter(dht.NewRTPeerDiversityFilter(h, 2, 3)),
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	bsnet := bsnet.NewFromIpfsHost(h, dht)
 	bswap := bitswap.New(ctx, bsnet, bstore)
