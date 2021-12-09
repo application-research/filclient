@@ -213,14 +213,17 @@ func (node *Node) RetrieveFromBestCandidate(
 						return nil, err
 					}
 
-					progressLk.Lock()
-					nodeSize, err := node.Size()
-					if err != nil {
-						nodeSize = 0
+					// Only count leaf nodes toward the total size
+					if len(node.Links()) == 0 {
+						progressLk.Lock()
+						nodeSize, err := node.Size()
+						if err != nil {
+							nodeSize = 0
+						}
+						bytesRetrieved += nodeSize
+						fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
+						progressLk.Unlock()
 					}
-					bytesRetrieved += nodeSize
-					fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
-					progressLk.Unlock()
 
 					if c.Type() == cid.Raw {
 						return nil, nil
