@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/ipld/go-ipld-prime"
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"golang.org/x/term"
 	"golang.org/x/xerrors"
 )
 
@@ -221,7 +223,7 @@ func (node *Node) RetrieveFromBestCandidate(
 							nodeSize = 0
 						}
 						bytesRetrieved += nodeSize
-						fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
+						printProgress(bytesRetrieved)
 						progressLk.Unlock()
 					}
 
@@ -347,15 +349,9 @@ func (node *Node) RetrieveFromBestCandidate(
 		}
 
 		var bytesReceived uint64
-		go func() {
-			for range time.Tick(time.Second / 20) {
-				fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
-			}
-		}()
-
 		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived_ uint64) {
 			bytesReceived = bytesReceived_
-			fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
+			printProgress(bytesReceived)
 		})
 		if err != nil {
 			log.Errorf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
@@ -424,4 +420,25 @@ func (node *Node) RetrieveFromIPFS(ctx context.Context, c cid.Cid) error {
 
 func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
 	return big.Add(big.Mul(qres.MinPricePerByte, big.NewIntUnsigned(qres.Size)), qres.UnsealPrice)
+}
+
+func printProgress(bytesReceived uint64) {
+	str := fmt.Sprintf("%v (%v)", bytesReceived, humanize.IBytes(bytesReceived))
+
+	termWidth, _, err := term.GetSize(int(os.Stdin.Fd()))
+	strLen := len(str)
+	if err == nil {
+
+		if strLen < termWidth {
+			// If the string is shorter than the terminal width, pad right side
+			// with spaces to remove old text
+			str = strings.Join([]string{str, strings.Repeat(" ", termWidth-strLen)}, "")
+		} else if strLen > termWidth {
+			// If the string doesn't fit in the terminal, cut it down to a size
+			// that fits
+			str = str[:termWidth]
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "%s\r", str)
 }
