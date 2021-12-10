@@ -1073,7 +1073,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		progressCallback = func(bytesReceived uint64) {}
 	}
 
-	log.Infof("starting retrieval with miner: %s", miner)
+	log.Infof("Starting retrieval with miner: %s", miner)
 
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
 	defer span.End()
@@ -1137,18 +1137,38 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 			return
 		}
 
+		silenceEventCode := false
+		eventCodeNotHandled := false
+
 		switch event.Code {
+		case datatransfer.Open:
+		case datatransfer.Accept:
+		case datatransfer.Restart:
+		case datatransfer.DataReceived:
+			silenceEventCode = true
+		case datatransfer.DataSent:
+		case datatransfer.Cancel:
+		case datatransfer.Error:
+		case datatransfer.CleanupComplete:
+		case datatransfer.NewVoucher:
 		case datatransfer.NewVoucherResult:
+
 			switch resType := state.LastVoucherResult().(type) {
 			case *retrievalmarket.DealResponse:
+				if len(resType.Message) != 0 {
+					log.Debugf("Received deal response voucher result %s (%v): %s\n\t%+v", resType.Status, resType.Status, resType.Message, resType)
+				} else {
+					log.Debugf("Received deal response voucher result %s (%v)\n\t%+v", resType.Status, resType.Status, resType)
+				}
+
 				switch resType.Status {
 				case retrievalmarket.DealStatusAccepted:
-					log.Info("deal accepted")
+					log.Info("Deal accepted")
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded:
 					if pchRequired {
-						log.Infof("sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
+						log.Infof("Sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
 
 						totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
 
@@ -1180,25 +1200,59 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					}
 				case retrievalmarket.DealStatusRejected:
 					finish(fmt.Errorf("deal rejected: %s", resType.Message))
-				case retrievalmarket.DealStatusFundsNeededUnseal:
-					finish(fmt.Errorf("received unexpected payment request for unsealing data"))
+				case retrievalmarket.DealStatusFundsNeededUnseal, retrievalmarket.DealStatusUnsealing:
+					finish(fmt.Errorf("data is sealed"))
 				case retrievalmarket.DealStatusCancelled:
 					finish(fmt.Errorf("deal cancelled: %s", resType.Message))
 				case retrievalmarket.DealStatusErrored:
 					finish(fmt.Errorf("deal errored: %s", resType.Message))
 				case retrievalmarket.DealStatusCompleted:
 					finish(nil)
-				default:
-					log.Debugf("in-progress voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
 				}
-			default:
-				log.Debugf("in-progress voucher result type: %v", resType)
 			}
-		case datatransfer.DataReceived:
+		case datatransfer.PauseInitiator:
+		case datatransfer.ResumeInitiator:
+		case datatransfer.PauseResponder:
+		case datatransfer.ResumeResponder:
+		case datatransfer.FinishTransfer:
+		case datatransfer.ResponderCompletes:
+		case datatransfer.ResponderBeginsFinalization:
+		case datatransfer.BeginFinalizing:
+		case datatransfer.Disconnected:
+		case datatransfer.Complete:
+		case datatransfer.CompleteCleanupOnRestart:
+		case datatransfer.DataQueued:
+		case datatransfer.DataQueuedProgress:
+		case datatransfer.DataSentProgress:
 		case datatransfer.DataReceivedProgress:
 			progressCallback(state.Received())
+			silenceEventCode = true
+		case datatransfer.RequestTimedOut:
+		case datatransfer.SendDataError:
+		case datatransfer.ReceiveDataError:
+		case datatransfer.TransferRequestQueued:
+		case datatransfer.RequestCancelled:
+		case datatransfer.Opened:
 		default:
-			log.Debugf("in-progress event code: %v", event.Code)
+			eventCodeNotHandled = true
+		}
+
+		var eventString string
+		name := datatransfer.Events[event.Code]
+		code := event.Code
+		msg := event.Message
+		if len(event.Message) != 0 {
+			eventString = fmt.Sprintf("\"%s\" (%v): %s", name, code, msg)
+		} else {
+			eventString = fmt.Sprintf("\"%s\" (%v)", name, code)
+		}
+
+		if eventCodeNotHandled {
+			log.Warnf("Unhandled event %s", eventString)
+		} else {
+			if !silenceEventCode {
+				log.Debugf("Processed event %s", eventString)
+			}
 		}
 	})
 	defer unsubscribe()

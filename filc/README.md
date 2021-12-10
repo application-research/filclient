@@ -9,3 +9,7 @@ filc currently needs a connection to a synced Lotus node to function. By default
 
 ### Wallet Setup
 Currently, filc will automatically generate a wallet address for you on first run. If you already have a wallet you'd like to use, you can grab the corresponding file starting with `O5` from your existing wallet folder (e.g. `~/.lotus/keystore/`) and place it into `~/.filc/wallet/`.
+
+### Debugging
+
+For more verbose logging, set GOLOG_LOG_LEVEL with the modules and levels you want to see. Example - `GOLOG_LOG_LEVEL="filclient=debug"`. Run `filc print-loggers` to view a list of all available configurable loggers.
