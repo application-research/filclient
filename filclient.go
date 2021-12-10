@@ -39,6 +39,7 @@ import (
 	"github.com/ipfs/go-graphsync"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	gsnet "github.com/ipfs/go-graphsync/network"
+	"github.com/ipfs/go-graphsync/peerstate"
 	storeutil "github.com/ipfs/go-graphsync/storeutil"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
@@ -87,7 +88,9 @@ type FilClient struct {
 
 	computePieceComm GetPieceCommFunc
 
-	graphSync graphsync.GraphExchange
+	graphSync *gsimpl.GraphSync
+
+	transport *gst.Transport
 }
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
@@ -172,7 +175,7 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		gsnet.NewFromLibp2pHost(cfg.Host),
 		storeutil.LinkSystemForBlockstore(cfg.Blockstore),
 		cfg.GraphsyncOpts...,
-	)
+	).(*gsimpl.GraphSync)
 
 	dtn := dtnet.NewFromLibp2pHost(cfg.Host)
 	tpt := gst.NewTransport(cfg.Host.ID(), gse, dtn)
@@ -237,6 +240,7 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		mpusher:          mpusher,
 		computePieceComm: GeneratePieceCommitment,
 		graphSync:        gse,
+		transport:        tpt,
 	}, nil
 }
 
@@ -660,6 +664,133 @@ func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[datatransfer.
 	return fc.dataTransfer.InProgressChannels(ctx)
 }
 
+type GraphSyncDataTransfer struct {
+	// GraphSync request id for this transfer
+	RequestID graphsync.RequestID `json:"requestID"`
+	// Graphsync state for this transfer
+	RequestState string `json:"requestState"`
+	// If a channel ID is present, indicates whether this is the current graphsync request for this channel
+	// (could have changed in a restart)
+	IsCurrentChannelRequest bool `json:"isCurrentChannelRequest"`
+	// Data transfer channel ID for this transfer
+	ChannelID *datatransfer.ChannelID `json:"channelID"`
+	// Data transfer state for this transfer
+	ChannelState *ChannelState `json:"channelState"`
+	// Diagnostic information about this request -- and unexpected inconsistencies in
+	// request state
+	Diagnostics []string `json:"diagnostics"`
+}
+
+type MinerTransferDiagnostics struct {
+	ReceivingTransfers []*GraphSyncDataTransfer `json:"sendingTransfers"`
+	SendingTransfers   []*GraphSyncDataTransfer `json:"receivingTransfers"`
+}
+
+// MinerTransferDiagnostics provides in depth current information on the state of transfers for a given miner,
+// covering running graphsync requests and related data transfers, etc
+func (fc *FilClient) MinerTransferDiagnostics(ctx context.Context, miner address.Address) (*MinerTransferDiagnostics, error) {
+	start := time.Now()
+	defer func() {
+		log.Infof("get miner diagnostics took: %s", time.Since(start))
+	}()
+	mpid, err := fc.minerPeer(ctx, miner)
+	if err != nil {
+		return nil, err
+	}
+	// gather information about active transport channels
+	transportChannels := fc.transport.ChannelsForPeer(mpid)
+	// gather information about graphsync state for peer
+	gsPeerState := fc.graphSync.PeerState(mpid)
+
+	sendingTransfers := fc.generateTransfers(ctx, transportChannels.SendingChannels, gsPeerState.IncomingState)
+	receivingTransfers := fc.generateTransfers(ctx, transportChannels.ReceivingChannels, gsPeerState.OutgoingState)
+
+	return &MinerTransferDiagnostics{
+		SendingTransfers:   sendingTransfers,
+		ReceivingTransfers: receivingTransfers,
+	}, nil
+}
+
+// generate transfers matches graphsync state and data transfer state for a given peer
+// to produce detailed output on what's happening with a transfer
+func (fc *FilClient) generateTransfers(ctx context.Context,
+	transportChannels map[datatransfer.ChannelID]gst.ChannelGraphsyncRequests,
+	gsPeerState peerstate.PeerState) []*GraphSyncDataTransfer {
+	tc := &transferConverter{
+		matchedRequests: make(map[graphsync.RequestID]*GraphSyncDataTransfer),
+		gsDiagnostics:   gsPeerState.Diagnostics(),
+		requestStates:   gsPeerState.RequestStates,
+	}
+
+	// iterate through all operating data transfer transport channels
+	for channelID, channelRequests := range transportChannels {
+		channelState, err := fc.TransferStatus(ctx, &channelID)
+		var baseDiagnostics []string
+		if err != nil {
+			baseDiagnostics = append(baseDiagnostics, fmt.Sprintf("Unable to lookup channel state: %s", err))
+			channelState = nil
+		}
+		// add the current request for this channel
+		tc.convertTransfer(&channelID, channelState, baseDiagnostics, channelRequests.Current, true)
+		for _, requestID := range channelRequests.Previous {
+			// add any previous requests that were cancelled for a restart
+			tc.convertTransfer(&channelID, channelState, baseDiagnostics, requestID, false)
+		}
+	}
+
+	// collect any graphsync data for channels we don't have any data transfer data for
+	tc.collectRemainingTransfers()
+
+	return tc.transfers
+}
+
+type transferConverter struct {
+	matchedRequests map[graphsync.RequestID]*GraphSyncDataTransfer
+	transfers       []*GraphSyncDataTransfer
+	gsDiagnostics   map[graphsync.RequestID][]string
+	requestStates   graphsync.RequestStates
+}
+
+// convert transfer assembles transfer and diagnostic data for a given graphsync/data-transfer request
+func (tc *transferConverter) convertTransfer(channelID *datatransfer.ChannelID, channelState *ChannelState, baseDiagnostics []string,
+	requestID graphsync.RequestID, isCurrentChannelRequest bool) {
+	diagnostics := baseDiagnostics
+	state, hasState := tc.requestStates[requestID]
+	stateString := state.String()
+	if !hasState {
+		stateString = "no graphsync state found"
+	}
+	if channelID == nil {
+		diagnostics = append(diagnostics, fmt.Sprintf("No data transfer channel id for GraphSync request ID %d", requestID))
+	} else if !hasState {
+		diagnostics = append(diagnostics, fmt.Sprintf("No current request state for data transfer channel id %s", channelID))
+	}
+	diagnostics = append(diagnostics, tc.gsDiagnostics[requestID]...)
+	transfer := &GraphSyncDataTransfer{
+		RequestID:               requestID,
+		RequestState:            stateString,
+		IsCurrentChannelRequest: isCurrentChannelRequest,
+		ChannelID:               channelID,
+		ChannelState:            channelState,
+		Diagnostics:             diagnostics,
+	}
+	tc.transfers = append(tc.transfers, transfer)
+	tc.matchedRequests[requestID] = transfer
+}
+
+func (tc *transferConverter) collectRemainingTransfers() {
+	for requestID := range tc.requestStates {
+		if _, ok := tc.matchedRequests[requestID]; !ok {
+			tc.convertTransfer(nil, nil, nil, requestID, false)
+		}
+	}
+	for requestID := range tc.gsDiagnostics {
+		if _, ok := tc.matchedRequests[requestID]; !ok {
+			tc.convertTransfer(nil, nil, nil, requestID, false)
+		}
+	}
+}
+
 func (fc *FilClient) GraphSyncStats() graphsync.Stats {
 	return fc.graphSync.Stats()
 }
@@ -942,7 +1073,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		progressCallback = func(bytesReceived uint64) {}
 	}
 
-	log.Infof("starting retrieval with miner: %s", miner)
+	log.Infof("Starting retrieval with miner: %s", miner)
 
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
 	defer span.End()
@@ -1006,18 +1137,38 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 			return
 		}
 
+		silenceEventCode := false
+		eventCodeNotHandled := false
+
 		switch event.Code {
+		case datatransfer.Open:
+		case datatransfer.Accept:
+		case datatransfer.Restart:
+		case datatransfer.DataReceived:
+			silenceEventCode = true
+		case datatransfer.DataSent:
+		case datatransfer.Cancel:
+		case datatransfer.Error:
+		case datatransfer.CleanupComplete:
+		case datatransfer.NewVoucher:
 		case datatransfer.NewVoucherResult:
+
 			switch resType := state.LastVoucherResult().(type) {
 			case *retrievalmarket.DealResponse:
+				if len(resType.Message) != 0 {
+					log.Debugf("Received deal response voucher result %s (%v): %s\n\t%+v", resType.Status, resType.Status, resType.Message, resType)
+				} else {
+					log.Debugf("Received deal response voucher result %s (%v)\n\t%+v", resType.Status, resType.Status, resType)
+				}
+
 				switch resType.Status {
 				case retrievalmarket.DealStatusAccepted:
-					log.Info("deal accepted")
+					log.Info("Deal accepted")
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded:
 					if pchRequired {
-						log.Infof("sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
+						log.Infof("Sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
 
 						totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
 
@@ -1049,25 +1200,59 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					}
 				case retrievalmarket.DealStatusRejected:
 					finish(fmt.Errorf("deal rejected: %s", resType.Message))
-				case retrievalmarket.DealStatusFundsNeededUnseal:
-					finish(fmt.Errorf("received unexpected payment request for unsealing data"))
+				case retrievalmarket.DealStatusFundsNeededUnseal, retrievalmarket.DealStatusUnsealing:
+					finish(fmt.Errorf("data is sealed"))
 				case retrievalmarket.DealStatusCancelled:
 					finish(fmt.Errorf("deal cancelled: %s", resType.Message))
 				case retrievalmarket.DealStatusErrored:
 					finish(fmt.Errorf("deal errored: %s", resType.Message))
 				case retrievalmarket.DealStatusCompleted:
 					finish(nil)
-				default:
-					log.Debugf("in-progress voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
 				}
-			default:
-				log.Debugf("in-progress voucher result type: %v", resType)
 			}
-		case datatransfer.DataReceived:
+		case datatransfer.PauseInitiator:
+		case datatransfer.ResumeInitiator:
+		case datatransfer.PauseResponder:
+		case datatransfer.ResumeResponder:
+		case datatransfer.FinishTransfer:
+		case datatransfer.ResponderCompletes:
+		case datatransfer.ResponderBeginsFinalization:
+		case datatransfer.BeginFinalizing:
+		case datatransfer.Disconnected:
+		case datatransfer.Complete:
+		case datatransfer.CompleteCleanupOnRestart:
+		case datatransfer.DataQueued:
+		case datatransfer.DataQueuedProgress:
+		case datatransfer.DataSentProgress:
 		case datatransfer.DataReceivedProgress:
 			progressCallback(state.Received())
+			silenceEventCode = true
+		case datatransfer.RequestTimedOut:
+		case datatransfer.SendDataError:
+		case datatransfer.ReceiveDataError:
+		case datatransfer.TransferRequestQueued:
+		case datatransfer.RequestCancelled:
+		case datatransfer.Opened:
 		default:
-			log.Debugf("in-progress event code: %v", event.Code)
+			eventCodeNotHandled = true
+		}
+
+		var eventString string
+		name := datatransfer.Events[event.Code]
+		code := event.Code
+		msg := event.Message
+		if len(event.Message) != 0 {
+			eventString = fmt.Sprintf("\"%s\" (%v): %s", name, code, msg)
+		} else {
+			eventString = fmt.Sprintf("\"%s\" (%v)", name, code)
+		}
+
+		if eventCodeNotHandled {
+			log.Warnf("Unhandled event %s", eventString)
+		} else {
+			if !silenceEventCode {
+				log.Debugf("Processed event %s", eventString)
+			}
 		}
 	})
 	defer unsubscribe()

@@ -19,6 +19,7 @@ import (
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	files "github.com/ipfs/go-ipfs-files"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
@@ -33,6 +34,20 @@ import (
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
+
+var printLoggersCmd = &cli.Command{
+	Name:  "print-loggers",
+	Usage: "Display loggers present in the program to help configure log levels",
+	Action: func(cctx *cli.Context) error {
+		loggers := logging.GetSubsystems()
+
+		for _, logger := range loggers {
+			fmt.Printf("%s\n", logger)
+		}
+
+		return nil
+	},
+}
 
 var makeDealCmd = &cli.Command{
 	Name:      "deal",

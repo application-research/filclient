@@ -13,7 +13,6 @@ import (
 var log = logging.Logger("filc")
 
 func main() {
-	//--system dt-impl --system dt-chanmon --system dt_graphsync --system graphsync --system data_transfer_network debug
 	logging.SetPrimaryCore(zapcore.NewCore(zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
 		MessageKey: "message",
 		TimeKey:    "time",
@@ -26,14 +25,11 @@ func main() {
 	}), os.Stdout, zapcore.DebugLevel))
 	logging.SetLogLevel("filc", "debug")
 	defer log.Sync()
-	// logging.SetLogLevel("dt-impl", "debug")
-	// logging.SetLogLevel("dt-chanmon", "debug")
-	// logging.SetLogLevel("dt_graphsync", "debug")
-	// logging.SetLogLevel("data_transfer_network", "debug")
-	// logging.SetLogLevel("filclient", "debug")
+
 	app := cli.NewApp()
 
 	app.Commands = []*cli.Command{
+		printLoggersCmd,
 		makeDealCmd,
 		getAskCmd,
 		infoCmd,

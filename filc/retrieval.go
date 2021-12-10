@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,9 @@ import (
 	ipldformat "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipld/go-ipld-prime"
+	"github.com/libp2p/go-libp2p-core/peer"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"golang.org/x/term"
 	"golang.org/x/xerrors"
 )
 
@@ -166,14 +170,17 @@ func (node *Node) RetrieveFromBestCandidate(
 						return nil, err
 					}
 
-					progressLk.Lock()
-					nodeSize, err := node.Size()
-					if err != nil {
-						nodeSize = 0
+					// Only count leaf nodes toward the total size
+					if len(node.Links()) == 0 {
+						progressLk.Lock()
+						nodeSize, err := node.Size()
+						if err != nil {
+							nodeSize = 0
+						}
+						bytesRetrieved += nodeSize
+						printProgress(bytesRetrieved)
+						progressLk.Unlock()
 					}
-					bytesRetrieved += nodeSize
-					fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesRetrieved, humanize.IBytes(bytesRetrieved))
-					progressLk.Unlock()
 
 					if c.Type() == cid.Raw {
 						return nil, nil
@@ -296,11 +303,13 @@ func (node *Node) RetrieveFromBestCandidate(
 			continue
 		}
 
-		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
-			fmt.Fprintf(os.Stderr, "%v (%v)\r", bytesReceived, humanize.IBytes(bytesReceived))
+		var bytesReceived uint64
+		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived_ uint64) {
+			bytesReceived = bytesReceived_
+			printProgress(bytesReceived)
 		})
 		if err != nil {
-			log.Debugf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
+			log.Errorf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
 		}
 
@@ -366,4 +375,25 @@ func (node *Node) RetrieveFromIPFS(ctx context.Context, c cid.Cid) error {
 
 func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
 	return big.Add(big.Mul(qres.MinPricePerByte, big.NewIntUnsigned(qres.Size)), qres.UnsealPrice)
+}
+
+func printProgress(bytesReceived uint64) {
+	str := fmt.Sprintf("%v (%v)", bytesReceived, humanize.IBytes(bytesReceived))
+
+	termWidth, _, err := term.GetSize(int(os.Stdin.Fd()))
+	strLen := len(str)
+	if err == nil {
+
+		if strLen < termWidth {
+			// If the string is shorter than the terminal width, pad right side
+			// with spaces to remove old text
+			str = strings.Join([]string{str, strings.Repeat(" ", termWidth-strLen)}, "")
+		} else if strLen > termWidth {
+			// If the string doesn't fit in the terminal, cut it down to a size
+			// that fits
+			str = str[:termWidth]
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "%s\r", str)
 }
