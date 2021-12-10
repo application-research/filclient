@@ -27,7 +27,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -127,8 +126,8 @@ func getClient(cctx *cli.Context, dir string) (*filclient.FilClient, func(), err
 type Node struct {
 	Host host.Host
 
-	Datastore datastore.Batching
-
+	Datastore  datastore.Batching
+	DHT        *dht.IpfsDHT
 	Blockstore blockstore.Blockstore
 	Bitswap    *bitswap.Bitswap
 
@@ -165,12 +164,22 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		return nil, err
 	}
 
-	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix, fullrt.DHTOption(dht.Datastore(ds), dht.Mode(dht.ModeClient), dht.BucketSize(20), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)))
+	dht, err := dht.New(
+		ctx,
+		h,
+		dht.Mode(dht.ModeClient),
+		dht.QueryFilter(dht.PublicQueryFilter),
+		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
+		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
+	)
 	if err != nil {
 		return nil, err
 	}
+	if err := dht.Bootstrap(ctx); err != nil {
+		return nil, err
+	}
 
-	bsnet := bsnet.NewFromIpfsHost(h, frt)
+	bsnet := bsnet.NewFromIpfsHost(h, dht)
 	bswap := bitswap.New(ctx, bsnet, bstore)
 
 	wallet, err := setupWallet(walletPath(cfgdir))
@@ -181,6 +190,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	return &Node{
 		Host:       h,
 		Blockstore: bstore,
+		DHT:        dht,
 		Datastore:  ds,
 		Bitswap:    bswap.(*bitswap.Bitswap),
 		Wallet:     wallet,
