@@ -25,8 +25,6 @@ import (
 	ipldformat "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipld/go-ipld-prime"
-	"github.com/libp2p/go-libp2p-core/peer"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"golang.org/x/term"
 	"golang.org/x/xerrors"
 )
