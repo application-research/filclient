@@ -611,8 +611,6 @@ github.com/ipfs/go-bitswap v0.1.0/go.mod h1:FFJEf18E9izuCqUtHxbWEvq+reg7o4CW5wSA
 github.com/ipfs/go-bitswap v0.1.2/go.mod h1:qxSWS4NXGs7jQ6zQvoPY3+NmOfHHG47mhkiLzBpJQIs=
 github.com/ipfs/go-bitswap v0.1.8/go.mod h1:TOWoxllhccevbWFUR2N7B1MTSVVge1s6XSMiCSA4MzM=
 github.com/ipfs/go-bitswap v0.3.4/go.mod h1:4T7fvNv/LmOys+21tnLzGKncMeeXUYUd1nUiJ2teMvI=
-github.com/ipfs/go-bitswap v0.4.0 h1:bLiqrpef1na4wdqGLqHKv954s1zz6KFghfmQWCPjBik=
-github.com/ipfs/go-bitswap v0.4.0/go.mod h1:J2sAsp9UKxLgHDektSy3y3Q9OfQjM9sjhKBR1dlwrMg=
 github.com/ipfs/go-bitswap v0.4.1-0.20211029155204-92d1e7aaf1dd h1:U2A/0p1Np2Gua2LdgGFPUF//Lg3TFTecpQw+Lh83BT4=
 github.com/ipfs/go-bitswap v0.4.1-0.20211029155204-92d1e7aaf1dd/go.mod h1:wharATVOo9d47usfeCSbaxVBY/0RbmOHdJDMyu5+7XI=
 github.com/ipfs/go-block-format v0.0.1/go.mod h1:DK/YYcsSUIVAFNwo/KZCdIIbpN0ROH/baNLgayt4pFc=
@@ -683,8 +681,8 @@ github.com/ipfs/go-graphsync v0.4.3/go.mod h1:mPOwDYv128gf8gxPFgXnz4fNrSYPsWyqis
 github.com/ipfs/go-graphsync v0.10.0/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
 github.com/ipfs/go-graphsync v0.10.1/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
 github.com/ipfs/go-graphsync v0.10.7/go.mod h1:2IqCM2RhN6Z6dILF0xUKgnsdl79goPbLZH97Q/DQ9xA=
-github.com/ipfs/go-graphsync v0.10.8 h1:Ua7fXINAqbI+zqmopUjQacKxyGMyYtMpIN9gNkFMFC8=
-github.com/ipfs/go-graphsync v0.10.8/go.mod h1:2IqCM2RhN6Z6dILF0xUKgnsdl79goPbLZH97Q/DQ9xA=
+github.com/ipfs/go-graphsync v0.10.9 h1:WK9I674LVVmZth1YCKBQcmbNPTj+cgVZtIXul9cDY1I=
+github.com/ipfs/go-graphsync v0.10.9/go.mod h1:2IqCM2RhN6Z6dILF0xUKgnsdl79goPbLZH97Q/DQ9xA=
 github.com/ipfs/go-hamt-ipld v0.1.1/go.mod h1:1EZCr2v0jlCnhpa+aZ0JZYp8Tt2w16+JJOAVz17YcDk=
 github.com/ipfs/go-ipfs-blockstore v0.0.1/go.mod h1:d3WClOmRQKFnJ0Jz/jj/zmksX0ma1gROTlovZKBmN08=
 github.com/ipfs/go-ipfs-blockstore v0.1.0/go.mod h1:5aD0AvHPi7mZc6Ci1WCAhiBQu2IsfTduLl+422H6Rqw=
@@ -783,7 +781,6 @@ github.com/ipfs/go-peertaskqueue v0.0.4/go.mod h1:03H8fhyeMfKNFWqzYEVyMbcPUeYrqP
 github.com/ipfs/go-peertaskqueue v0.1.0/go.mod h1:Jmk3IyCcfl1W3jTW3YpghSwSEC6IJ3Vzz/jUmWw8Z0U=
 github.com/ipfs/go-peertaskqueue v0.1.1/go.mod h1:Jmk3IyCcfl1W3jTW3YpghSwSEC6IJ3Vzz/jUmWw8Z0U=
 github.com/ipfs/go-peertaskqueue v0.2.0/go.mod h1:5/eNrBEbtSKWCG+kQK8K8fGNixoYUnr+P7jivavs9lY=
-github.com/ipfs/go-peertaskqueue v0.4.0/go.mod h1:KL9F49hXJMoXCad8e5anivjN+kWdr+CyGcyh4K6doLc=
 github.com/ipfs/go-peertaskqueue v0.7.0/go.mod h1:M/akTIE/z1jGNXMU7kFB4TeSEFvj68ow0Rrb04donIU=
 github.com/ipfs/go-peertaskqueue v0.7.1 h1:7PLjon3RZwRQMgOTvYccZ+mjzkmds/7YzSWKFlBAypE=
 github.com/ipfs/go-peertaskqueue v0.7.1/go.mod h1:M/akTIE/z1jGNXMU7kFB4TeSEFvj68ow0Rrb04donIU=
@@ -1159,7 +1156,6 @@ github.com/libp2p/go-libp2p-transport-upgrader v0.4.2/go.mod h1:NR8ne1VwfreD5VIW
 github.com/libp2p/go-libp2p-transport-upgrader v0.4.3/go.mod h1:bpkldbOWXMrXhpZbSV1mQxTrefOg2Fi+k1ClDSA4ppw=
 github.com/libp2p/go-libp2p-transport-upgrader v0.4.6 h1:SHt3g0FslnqIkEWF25YOB8UCOCTpGAVvHRWQYJ+veiI=
 github.com/libp2p/go-libp2p-transport-upgrader v0.4.6/go.mod h1:JE0WQuQdy+uLZ5zOaI3Nw9dWGYJIA7mywEtP2lMvnyk=
-github.com/libp2p/go-libp2p-xor v0.0.0-20210714161855-5c005aca55db h1:EDoDKW8ZAHd6SIDeo+thU51PyQppqLYkBxx0ObvFj/w=
 github.com/libp2p/go-libp2p-xor v0.0.0-20210714161855-5c005aca55db/go.mod h1:LSTM5yRnjGZbWNTA/hRwq2gGFrvRIbQJscoIL/u6InY=
 github.com/libp2p/go-libp2p-yamux v0.5.1 h1:sX4WQPHMhRxJE5UZTfjEuBvlQWXB5Bo3A2JK9ZJ9EM0=
 github.com/libp2p/go-libp2p-yamux v0.5.1/go.mod h1:dowuvDu8CRWmr0iqySMiSxK+W0iL5cMVO9S94Y6gkv4=
@@ -2092,7 +2088,6 @@ golang.org/x/sys v0.0.0-20210816183151-1e6c022a8912 h1:uCLL3g5wH2xjxVREVuAbP9JM5
 golang.org/x/sys v0.0.0-20210816183151-1e6c022a8912/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/term v0.0.0-20201117132131-f5c789dd3221/go.mod h1:Nr5EML6q2oocZ2LXRh80K7BxOlk5/8JxuGnuhpl+muw=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
-golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf h1:MZ2shdL+ZM/XzY3ZGOnh4Nlpnxz5GSOhOmtHo3iPU6M=
 golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 h1:JGgROgKl9N8DuW20oFS5gxc+lE67/N3FcwmBPMe7ArY=
 golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
