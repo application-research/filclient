@@ -171,6 +171,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		dht.QueryFilter(dht.PublicQueryFilter),
 		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
 		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
+		dht.Datastore(ds),
 	)
 	if err != nil {
 		return nil, err
