@@ -124,10 +124,10 @@ func (node *Node) RetrieveFromBestCandidate(
 	if cfg.tryIPFS && (selNode == nil || selNode.IsNull()) {
 		stats, err := node.tryRetrieveFromIPFS(ctx, c)
 		if err != nil {
-			// If IPFS failed, log the error and continue to FIL attempt
-			log.Error(err) // TODO: handle errors specifically
+			// If IPFS failed, log the error and continue on to FIL attempt
+			log.Infof("Bitswap retrieval failed: %v", err) // TODO: handle errors specifically
 		} else {
-			return stats, err
+			return stats, nil
 		}
 	}
 
@@ -272,8 +272,6 @@ func (node *Node) tryRetrieveFromFIL(
 }
 
 func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetrievalStats, error) {
-	time.Sleep(2 * time.Second)
-
 	innerCtx, innerCancel := context.WithCancel(ctx)
 	defer innerCancel()
 
@@ -281,17 +279,26 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 
 	providers := node.DHT.FindProvidersAsync(innerCtx, c, 0)
 
+	// Ready will be true if we connected to at least one provider, false if no
+	// miners successfully connected
 	ready := make(chan bool, 1)
 	go func() {
 		for {
 			select {
-			case provider := <-providers:
-				if err := node.Host.Connect(innerCtx, provider); err != nil {
-					log.Warnf("Failed to connect to IPFS provider %s: %v", provider, err)
+			case provider, ok := <-providers:
+				if !ok {
+					ready <- false
+					return
+				}
+
+				// If no addresses are listed for the provider, we should just
+				// skip it
+				if len(provider.Addrs) == 0 {
+					log.Debugf("Skipping IPFS provider with no addresses %s", provider.ID)
 					continue
 				}
 
-				log.Infof("Connected to IPFS provider %s", provider)
+				log.Infof("Connected to IPFS provider %s", provider.ID)
 				ready <- true
 			case <-innerCtx.Done():
 				return
@@ -303,8 +310,10 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 	// TODO: also add connection timeout
 	case <-innerCtx.Done():
 		return nil, innerCtx.Err()
-	case <-ready:
-		// All we do on ready is stop blocking
+	case ready := <-ready:
+		if !ready {
+			return nil, fmt.Errorf("couldn't find CID")
+		}
 	}
 
 	// If we were able to connect to at least one of the providers, go ahead
@@ -314,7 +323,7 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 	var bytesRetrieved uint64 = 0
 	startTime := time.Now()
 
-	log.Info("Starting IPFS retrieval")
+	log.Info("Starting retrieval")
 
 	bserv := blockservice.New(node.Blockstore, node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)

@@ -172,16 +172,18 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
 		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
 		dht.Datastore(ds),
+		dht.DisableAutoRefresh(),
 	)
 	if err != nil {
-		return nil, err
-	}
-	if err := dht.Bootstrap(ctx); err != nil {
 		return nil, err
 	}
 
 	bsnet := bsnet.NewFromIpfsHost(h, dht)
 	bswap := bitswap.New(ctx, bsnet, bstore)
+
+	// if err := <-dht.RefreshRoutingTable(); err != nil {
+	// 	return nil, err
+	// }
 
 	wallet, err := setupWallet(walletPath(cfgdir))
 	if err != nil {
