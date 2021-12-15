@@ -173,6 +173,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
 		dht.Datastore(ds),
 		dht.DisableAutoRefresh(),
+		dht.RoutingTablePeerDiversityFilter(dht.NewRTPeerDiversityFilter(h, 2, 3)),
 	)
 	if err != nil {
 		return nil, err
