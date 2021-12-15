@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -106,7 +107,7 @@ func clientFromNode(cctx *cli.Context, nd *Node, dir string) (*filclient.FilClie
 		return nil, nil, err
 	}
 
-	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir)
+	fc, err := filclient.NewClient(nd.Host, nd.AnnounceAddr, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,13 +126,14 @@ func getClient(cctx *cli.Context, dir string) (*filclient.FilClient, func(), err
 
 type Node struct {
 	Host host.Host
+	AnnounceAddr multiaddr.Multiaddr
 
 	Datastore  datastore.Batching
 	DHT        *dht.IpfsDHT
 	Blockstore blockstore.Blockstore
 	Bitswap    *bitswap.Bitswap
 
-	Wallet *wallet.LocalWallet
+	Wallet       *wallet.LocalWallet
 }
 
 func setup(ctx context.Context, cfgdir string) (*Node, error) {
@@ -142,6 +144,8 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
+	// TODO: get announce address from config
+	var announceAddr multiaddr.Multiaddr
 	h, err := libp2p.New(
 		//libp2p.ConnectionManager(connmgr.NewConnManager(500, 800, time.Minute)),
 		libp2p.Identity(peerkey),
@@ -188,6 +192,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 
 	return &Node{
 		Host:       h,
+		AnnounceAddr: announceAddr,
 		Blockstore: bstore,
 		DHT:        dht,
 		Datastore:  ds,

@@ -2,6 +2,8 @@ package filclient
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +11,12 @@ import (
 	"sync"
 	"time"
 
+	boostcar "github.com/filecoin-project/boost/car"
+	smtypes "github.com/filecoin-project/boost/storagemarket/types"
+	"github.com/filecoin-project/boost/transport/httptransport"
+	boosttypes "github.com/filecoin-project/boost/transport/types"
 	"github.com/filecoin-project/go-address"
+	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
@@ -17,6 +24,7 @@ import (
 	dtnet "github.com/filecoin-project/go-data-transfer/network"
 	gst "github.com/filecoin-project/go-data-transfer/transport/graphsync"
 	commcid "github.com/filecoin-project/go-fil-commcid"
+	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
@@ -33,6 +41,7 @@ import (
 	paychmgr "github.com/filecoin-project/lotus/paychmgr"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
@@ -47,22 +56,19 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	protocol "github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-
-	commp "github.com/filecoin-project/go-fil-commp-hashhash"
-
-	cborutil "github.com/filecoin-project/go-cbor-util"
 )
 
 var Tracer trace.Tracer = otel.Tracer("filclient")
 
 var log = logging.Logger("filclient")
 
-const DealProtocol = "/fil/storage/mk/1.1.0"
+const DealProtocolv110 = "/fil/storage/mk/1.1.0"
+const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 const QueryAskProtocol = "/fil/storage/ask/1.1.0"
 const DealStatusProtocol = "/fil/storage/status/1.1.0"
 const RetrievalQueryProtocol = "/fil/retrieval/qry/1.0.0"
@@ -93,9 +99,17 @@ type FilClient struct {
 	transport *gst.Transport
 
 	logRetrievalProgressEvents bool
+
+	libp2pDTServer    *httptransport.Libp2pCarServer
+	Libp2pTransferMgr *libp2pTransferManager
 }
 
-type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
+type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error)
+
+type Lp2pDTConfig struct {
+	Server          httptransport.ServerConfig
+	TransferTimeout time.Duration
+}
 
 type Config struct {
 	DataDir                    string
@@ -109,9 +123,13 @@ type Config struct {
 	ChannelMonitorConfig       channelmonitor.Config
 	RetrievalConfigurer        datatransfer.TransportConfigurer
 	LogRetrievalProgressEvents bool
+	Lp2pDTConfig               Lp2pDTConfig
 }
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
+	if len(h.Addrs()) == 0 {
+		return nil, errors.New("host must have at least one announce address")
+	}
 
 	cfg := &Config{
 		Host:       h,
@@ -143,6 +161,19 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 
 			// Called when a restart completes successfully
 			//OnRestartComplete func(id datatransfer.ChannelID)
+		},
+		Lp2pDTConfig: Lp2pDTConfig{
+			Server: httptransport.ServerConfig{
+				AnnounceAddr: h.Addrs()[0],
+				// Keep the cache around for one minute after a request
+				// finishes in case the connection bounced in the middle
+				// of a transfer, or there is a request for the same payload
+				// soon after
+				BlockInfoCacheManager: boostcar.NewDelayedUnrefBICM(time.Minute),
+			},
+			// Wait up to 24 hours for the transfer to complete (including
+			// after a connection bounce) before erroring out the deal
+			TransferTimeout: 24 * time.Hour,
 		},
 	}
 
@@ -232,7 +263,18 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		})
 	*/
 
-	return &FilClient{
+	// Create a server for libp2p data transfers
+	lp2pds := namespace.Wrap(cfg.Datastore, datastore.NewKey("/libp2p-dt"))
+	authDB := httptransport.NewAuthTokenDB(lp2pds)
+	dtServer := httptransport.NewLibp2pCarServer(cfg.Host, authDB, cfg.Blockstore, cfg.Lp2pDTConfig.Server)
+
+	// Create a manager to watch for libp2p data transfer events
+	libp2pTransferMgr := newLibp2pTransferManager(dtServer, authDB, cfg.Lp2pDTConfig.TransferTimeout)
+	if err := libp2pTransferMgr.Start(context.TODO()); err != nil {
+		return nil, err
+	}
+
+	fc := &FilClient{
 		host:                       cfg.Host,
 		api:                        cfg.Api,
 		wallet:                     cfg.Wallet,
@@ -245,14 +287,29 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		graphSync:                  gse,
 		transport:                  tpt,
 		logRetrievalProgressEvents: cfg.LogRetrievalProgressEvents,
-	}, nil
+		libp2pDTServer:             dtServer,
+		Libp2pTransferMgr:          libp2pTransferMgr,
+	}
+
+	return fc, nil
 }
 
 func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 	fc.computePieceComm = pcf
 }
 
-func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol protocol.ID) (inet.Stream, error) {
+func (fc *FilClient) DataTransferProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
+	s, err := fc.streamToMiner(ctx, miner, DealProtocolv110, DealProtocolv120)
+	if err != nil {
+		return "", fmt.Errorf("connecting to miner %s: %w", miner, err)
+	}
+
+	proto := s.Protocol()
+	s.Close() //nolint:errcheck
+	return proto, nil
+}
+
+func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol ...protocol.ID) (inet.Stream, error) {
 	ctx, span := Tracer.Start(ctx, "streamToMiner", trace.WithAttributes(
 		attribute.Stringer("miner", maddr),
 	))
@@ -263,7 +320,7 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 		return nil, err
 	}
 
-	s, err := fc.host.NewStream(ctx, mpid, protocol)
+	s, err := fc.host.NewStream(ctx, mpid, protocol...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open stream to peer: %w", err)
 	}
@@ -406,7 +463,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 	))
 	defer span.End()
 
-	commP, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
+	commP, dataSize, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
 	if err != nil {
 		return nil, err
 	}
@@ -482,32 +539,94 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		Piece: &storagemarket.DataRef{
 			TransferType: storagemarket.TTGraphsync,
 			Root:         data,
+			RawBlockSize: dataSize,
 		},
 		FastRetrieval: true,
 	}, nil
 }
 
-func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal) (*network.SignedResponse, error) {
-	ctx, span := Tracer.Start(ctx, "sendProposal")
+func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Proposal, propCid cid.Cid) (bool, error) {
+	ctx, span := Tracer.Start(ctx, "sendProposalV110")
 	defer span.End()
 
-	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocol)
+	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocolv110)
 	if err != nil {
-		return nil, fmt.Errorf("opening stream to miner: %w", err)
+		return false, fmt.Errorf("opening stream to miner: %w", err)
 	}
 
 	defer s.Close()
 
+	// Send proposal to provider using deal protocol v1.1.0 format
 	var resp network.SignedResponse
-
 	if err := doRpc(ctx, s, netprop, &resp); err != nil {
-		return nil, fmt.Errorf("send proposal rpc: %w", err)
+		return false, fmt.Errorf("send proposal rpc: %w", err)
 	}
 
-	return &resp, nil
+	switch resp.Response.State {
+	case storagemarket.StorageDealError:
+		return true, fmt.Errorf("error response from miner: %s", resp.Response.Message)
+	case storagemarket.StorageDealProposalRejected:
+		return true, fmt.Errorf("deal rejected by miner: %s", resp.Response.Message)
+	default:
+		return true, fmt.Errorf("unrecognized response from miner: %d %s", resp.Response.State, resp.Response.Message)
+	case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
+	}
+
+	if propCid != resp.Response.Proposal {
+		return true, fmt.Errorf("proposal in saved deal did not match response (%s != %s)", propCid, resp.Response.Proposal)
+	}
+
+	return false, nil
 }
 
-func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (fc *FilClient) SendProposalV120(ctx context.Context, netprop network.Proposal, announce multiaddr.Multiaddr, authToken string) (bool, error) {
+	ctx, span := Tracer.Start(ctx, "sendProposalV120")
+	defer span.End()
+
+	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocolv120)
+	if err != nil {
+		return false, fmt.Errorf("opening stream to miner: %w", err)
+	}
+
+	defer s.Close()
+
+	// Send proposal to provider using deal protocol v1.2.0 format
+	transferParams, err := json.Marshal(boosttypes.HttpRequest{
+		URL: announce.String(),
+		Headers: map[string]string{
+			"Authorization": httptransport.BasicAuthHeader("", authToken),
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("marshalling deal transfer params: %w", err)
+	}
+
+	// Send proposal to storage provider using deal protocol v1.2.0 format
+	params := smtypes.DealParams{
+		DealUUID:           uuid.New(),
+		ClientDealProposal: *netprop.DealProposal,
+		DealDataRoot:       netprop.Piece.Root,
+		Transfer: smtypes.Transfer{
+			Type:   "libp2p",
+			Params: transferParams,
+			Size:   netprop.Piece.RawBlockSize,
+		},
+	}
+	// TODO: Set a reasonable deadline to receive a response from the server
+	var resp smtypes.DealResponse
+	if err := doRpc(ctx, s, params, &resp); err != nil {
+		return false, fmt.Errorf("send proposal rpc: %w", err)
+	}
+
+	// Check if the deal proposal was accepted
+	if !resp.Accepted {
+		return true, fmt.Errorf("deal proposal rejected: %s", resp.Message)
+	}
+
+	return false, nil
+}
+
+func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	selectiveCar := car.NewSelectiveCar(
 		context.Background(),
 		bstore,
@@ -517,29 +636,29 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	writer := new(commp.Calc)
 	err = preparedCar.Dump(ctx, writer)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	commpc, size, err := writer.Digest()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	commCid, err := commcid.DataCommitmentV1ToCID(commpc)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
-	return commCid, abi.PaddedPieceSize(size).Unpadded(), nil
+	return commCid, preparedCar.Size(), abi.PaddedPieceSize(size).Unpadded(), nil
 }
 
-func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	selectiveCar := car.NewSelectiveCar(
 		context.Background(),
 		bstore,
@@ -549,21 +668,21 @@ func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore 
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	commpWriter := &writer.Writer{}
 	err = preparedCar.Dump(ctx, commpWriter)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	dataCIDSize, err := commpWriter.Sum()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
-	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
+	return dataCIDSize.PieceCID, preparedCar.Size(), dataCIDSize.PieceSize.Unpadded(), nil
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
