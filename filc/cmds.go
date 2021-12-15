@@ -408,7 +408,7 @@ var retrieveFileCmd = &cli.Command{
 			endpoint := "https://api.estuary.tech/retrieval-candidates" // TODO: don't hard code
 			candidates_, err := node.GetRetrievalCandidates(endpoint, c)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get retrieval candidates: %w", err)
 			}
 
 			candidates = candidates_
