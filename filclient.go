@@ -483,7 +483,7 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 	}
 
 	writer := new(commp.Calc)
-	err = preparedCar.Dump(writer)
+	err = preparedCar.Dump(ctx, writer)
 	if err != nil {
 		return cid.Undef, 0, err
 	}
@@ -515,7 +515,7 @@ func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore 
 	}
 
 	commpWriter := &writer.Writer{}
-	err = preparedCar.Dump(commpWriter)
+	err = preparedCar.Dump(ctx, commpWriter)
 	if err != nil {
 		return cid.Undef, 0, err
 	}
@@ -1006,7 +1006,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 
 func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Address) (address.Address, error) {
 
-	avail, err := fc.pchmgr.AvailableFundsByFromTo(fc.ClientAddr, dest)
+	avail, err := fc.pchmgr.AvailableFundsByFromTo(ctx, fc.ClientAddr, dest)
 	if err != nil {
 		return address.Undef, err
 	}
@@ -1101,7 +1101,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		if err != nil {
 			return nil, fmt.Errorf("failed to get payment channel: %w", err)
 		}
-		pchLane, err = fc.pchmgr.AllocateLane(pchAddr)
+		pchLane, err = fc.pchmgr.AllocateLane(ctx, pchAddr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to allocate lane: %w", err)
 		}

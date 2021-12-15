@@ -361,6 +361,7 @@ var retrieveFileCmd = &cli.Command{
 
 			selspec, err := textselector.SelectorSpecFromPath(
 				dmSelText,
+				true,
 
 				// URGH - this is a direct copy from https://github.com/filecoin-project/go-fil-markets/blob/v1.12.0/shared/selectors.go#L10-L16
 				// Unable to use it because we need the SelectorSpec, and markets exposes just a reified node
@@ -434,7 +435,7 @@ var retrieveFileCmd = &cli.Command{
 			var subRootFound bool
 
 			// no err check - we just compiled this before starting, but now we do not wrap a `*`
-			selspec, _ := textselector.SelectorSpecFromPath(dmSelText, nil) //nolint:errcheck
+			selspec, _ := textselector.SelectorSpecFromPath(dmSelText, true, nil) //nolint:errcheck
 			if err := retrievehelper.TraverseDag(
 				cctx.Context,
 				dservOffline,
