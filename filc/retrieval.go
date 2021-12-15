@@ -272,12 +272,12 @@ func (node *Node) tryRetrieveFromFIL(
 }
 
 func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetrievalStats, error) {
-	innerCtx, innerCancel := context.WithCancel(ctx)
-	defer innerCancel()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	log.Info("Searching IPFS for CID...")
 
-	providers := node.DHT.FindProvidersAsync(innerCtx, c, 0)
+	providers := node.DHT.FindProvidersAsync(ctx, c, 0)
 
 	// Ready will be true if we connected to at least one provider, false if no
 	// miners successfully connected
@@ -300,7 +300,7 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 
 				log.Infof("Connected to IPFS provider %s", provider.ID)
 				ready <- true
-			case <-innerCtx.Done():
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -308,8 +308,8 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 
 	select {
 	// TODO: also add connection timeout
-	case <-innerCtx.Done():
-		return nil, innerCtx.Err()
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case ready := <-ready:
 		if !ready {
 			return nil, fmt.Errorf("couldn't find CID")
@@ -330,7 +330,7 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 	//dsess := dserv.Session(ctx)
 
 	cset := cid.NewSet()
-	if err := merkledag.Walk(innerCtx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
+	if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
