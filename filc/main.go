@@ -29,7 +29,9 @@ func main() {
 
 		ConsoleSeparator: "  ",
 	}), os.Stdout, zapcore.DebugLevel))
-	logging.SetLogLevel("filc", "debug")
+
+	logging.SetLogLevel("filc", "info")
+
 	defer log.Sync()
 
 	app := cli.NewApp()

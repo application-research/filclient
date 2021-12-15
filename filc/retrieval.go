@@ -122,86 +122,33 @@ func (node *Node) RetrieveFromBestCandidate(
 ) (RetrievalStats, error) {
 	// Try IPFS first, if requested
 	if cfg.tryIPFS && (selNode == nil || selNode.IsNull()) {
-		log.Info("Searching IPFS for CID...")
-
-		providers, err := node.DHT.FindProviders(ctx, c)
+		stats, err := node.tryRetrieveFromIPFS(ctx, c)
 		if err != nil {
-			// TODO: don't die here
-			return nil, err
-		}
-
-		avail := len(providers) > 0
-
-		if avail {
-			log.Info("The CID was found on IPFS, connecting to providers...")
-
-			// Connect to the retrieved providers
-			connectedCount := 0
-			for _, provider := range providers {
-				if err := node.Host.Connect(ctx, provider); err != nil {
-					log.Debugf("Failed to connect to IPFS provider %s: %v", provider, err)
-					continue
-				}
-				connectedCount++
-			}
-
-			// If we were able to connect to at least one of the providers, go ahead
-			// with the retrieval
-
-			var progressLk sync.Mutex
-			var bytesRetrieved uint64 = 0
-			startTime := time.Now()
-
-			if connectedCount > 0 {
-				log.Infof("Successfully connected to %v/%v providers", connectedCount, len(providers))
-
-				log.Info("Starting IPFS retrieval")
-
-				bserv := blockservice.New(node.Blockstore, node.Bitswap)
-				dserv := merkledag.NewDAGService(bserv)
-				//dsess := dserv.Session(ctx)
-
-				cset := cid.NewSet()
-				if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
-					node, err := dserv.Get(ctx, c)
-					if err != nil {
-						return nil, err
-					}
-
-					// Only count leaf nodes toward the total size
-					if len(node.Links()) == 0 {
-						progressLk.Lock()
-						nodeSize, err := node.Size()
-						if err != nil {
-							nodeSize = 0
-						}
-						bytesRetrieved += nodeSize
-						printProgress(bytesRetrieved)
-						progressLk.Unlock()
-					}
-
-					if c.Type() == cid.Raw {
-						return nil, nil
-					}
-
-					return node.Links(), nil
-				}, c, cset.Visit, merkledag.Concurrent()); err != nil {
-					return nil, err
-				}
-
-				log.Info("IPFS retrieval succeeded")
-
-				return &IPFSRetrievalStats{
-					ByteSize: bytesRetrieved,
-					Duration: time.Since(startTime),
-				}, nil
-			} else {
-				log.Info("Could not connect to any providers, will not attempt IPFS retrieval")
-			}
+			// If IPFS failed, log the error and continue on to FIL attempt
+			log.Infof("Bitswap retrieval failed: %v", err) // TODO: handle errors specifically
 		} else {
-			log.Info("Could not find the CID on IPFS")
+			return stats, nil
 		}
 	}
+
+	stats, err := node.tryRetrieveFromFIL(ctx, fc, c, selNode, candidates, cfg)
+	if err != nil {
+		log.Error(err) // TODO
+	} else {
+		return stats, err
+	}
+
+	return nil, fmt.Errorf("all retrieval attempts failed")
+}
+
+func (node *Node) tryRetrieveFromFIL(
+	ctx context.Context,
+	fc *filclient.FilClient,
+	c cid.Cid,
+	selNode ipld.Node,
+	candidates []RetrievalCandidate,
+	cfg CandidateSelectionConfig,
+) (*FILRetrievalStats, error) {
 
 	// If no miners are provided, there's nothing else we can do
 	if len(candidates) == 0 {
@@ -287,7 +234,7 @@ func (node *Node) RetrieveFromBestCandidate(
 	// Now attempt retrievals in serial from first to last, until one works.
 	// stats will get set if a retrieval succeeds - if no retrievals work, it
 	// will still be nil after the loop finishes
-	var stats RetrievalStats = nil
+	var stats *FILRetrievalStats = nil
 	for _, query := range queries {
 		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s)", query.Candidate.Miner, query.Candidate.RootCid, types.FIL(totalCost(query.Response)))
 
@@ -324,51 +271,98 @@ func (node *Node) RetrieveFromBestCandidate(
 	return stats, nil
 }
 
-func (node *Node) RetrieveFromMiner(
-	ctx context.Context,
-	fc filclient.FilClient,
-	miner address.Address,
-	c cid.Cid,
-) (*filclient.RetrievalStats, error) {
-	ask, err := fc.RetrievalQuery(ctx, miner, c)
-	if err != nil {
-		return nil, err
+func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetrievalStats, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	log.Info("Searching IPFS for CID...")
+
+	providers := node.DHT.FindProvidersAsync(ctx, c, 0)
+
+	// Ready will be true if we connected to at least one provider, false if no
+	// miners successfully connected
+	ready := make(chan bool, 1)
+	go func() {
+		for {
+			select {
+			case provider, ok := <-providers:
+				if !ok {
+					ready <- false
+					return
+				}
+
+				// If no addresses are listed for the provider, we should just
+				// skip it
+				if len(provider.Addrs) == 0 {
+					log.Debugf("Skipping IPFS provider with no addresses %s", provider.ID)
+					continue
+				}
+
+				log.Infof("Connected to IPFS provider %s", provider.ID)
+				ready <- true
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	select {
+	// TODO: also add connection timeout
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case ready := <-ready:
+		if !ready {
+			return nil, fmt.Errorf("couldn't find CID")
+		}
 	}
 
-	proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
-	if err != nil {
-		return nil, err
-	}
+	// If we were able to connect to at least one of the providers, go ahead
+	// with the retrieval
 
-	stats, err := fc.RetrieveContent(ctx, miner, proposal)
-	if err != nil {
-		return nil, err
-	}
+	var progressLk sync.Mutex
+	var bytesRetrieved uint64 = 0
+	startTime := time.Now()
 
-	return stats, nil
-}
+	log.Info("Starting retrieval")
 
-func (node *Node) RetrieveFromIPFS(ctx context.Context, c cid.Cid) error {
 	bserv := blockservice.New(node.Blockstore, node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
+	//dsess := dserv.Session(ctx)
 
 	cset := cid.NewSet()
 	if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
-
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
 		}
 
+		// Only count leaf nodes toward the total size
+		if len(node.Links()) == 0 {
+			progressLk.Lock()
+			nodeSize, err := node.Size()
+			if err != nil {
+				nodeSize = 0
+			}
+			bytesRetrieved += nodeSize
+			printProgress(bytesRetrieved)
+			progressLk.Unlock()
+		}
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
+
 		return node.Links(), nil
 	}, c, cset.Visit, merkledag.Concurrent()); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	log.Info("IPFS retrieval succeeded")
+
+	return &IPFSRetrievalStats{
+		ByteSize: bytesRetrieved,
+		Duration: time.Since(startTime),
+	}, nil
 }
 
 func totalCost(qres *retrievalmarket.QueryResponse) big.Int {

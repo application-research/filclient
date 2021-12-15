@@ -298,8 +298,6 @@ github.com/filecoin-project/go-bitfield v0.2.0/go.mod h1:CNl9WG8hgR5mttCnUErjcQj
 github.com/filecoin-project/go-bitfield v0.2.3/go.mod h1:CNl9WG8hgR5mttCnUErjcQjGvuiZjRqK9rHVBsQF4oM=
 github.com/filecoin-project/go-bitfield v0.2.4 h1:uZ7MeE+XfM5lqrHJZ93OnhQKc/rveW8p9au0C68JPgk=
 github.com/filecoin-project/go-bitfield v0.2.4/go.mod h1:CNl9WG8hgR5mttCnUErjcQjGvuiZjRqK9rHVBsQF4oM=
-github.com/filecoin-project/go-bs-lmdb v1.0.5 h1:QXX8gUe7xSWJvUXXXRm4NyTpjduAAP4zNfLHu6STPrI=
-github.com/filecoin-project/go-bs-lmdb v1.0.5/go.mod h1:QdXoAyeAHGj0zDe42RFkGGv1vxjCCreyTUyhrrNz5po=
 github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e h1:l1RWQlXNH66vKDjk7I/z4dRK5XUsUzmYf8aKn14oD6I=
 github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e/go.mod h1:UwS+c3V5lHoN7enIupFntTGGsj/u+PgWL3i0KZj6gnE=
 github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2/go.mod h1:pqTiPHobNkOVM5thSRsHYjyQfq7O5QSCMhvuu9JoDlg=
