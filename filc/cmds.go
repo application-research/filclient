@@ -412,9 +412,18 @@ var retrieveFileCmd = &cli.Command{
 		var networks []interface{}
 
 		if network == NetworkIPFS || network == NetworkAuto {
-			networks = append(networks, IPFSRetrievalConfig{
-				Cid: c,
-			})
+			if !selNode.IsNull() || selNode != nil {
+				// Selector nodes are not compatible with IPFS
+				if network == NetworkIPFS {
+					log.Fatal("IPFS is not compatible with selector node")
+				} else {
+					log.Info("A selector node has been specified, skipping IPFS")
+				}
+			} else {
+				networks = append(networks, IPFSRetrievalConfig{
+					Cid: c,
+				})
+			}
 		}
 
 		if network == NetworkFIL || network == NetworkAuto {
