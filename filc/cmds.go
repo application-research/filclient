@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/application-research/filclient/retrievehelper"
@@ -337,7 +338,7 @@ var retrieveFileCmd = &cli.Command{
 			}
 		}
 
-		network := cctx.String("network")
+		network := strings.ToLower(strings.TrimSpace(cctx.String("network")))
 
 		c, err := cid.Decode(cidStr)
 		if err != nil {
