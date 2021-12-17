@@ -307,7 +307,7 @@ var retrieveFileCmd = &cli.Command{
 	Flags: []cli.Flag{
 		flagMiners,
 		flagOutput,
-		flagNoIPFS,
+		flagNetwork,
 		flagDmPathSel,
 	},
 	Action: func(cctx *cli.Context) error {
@@ -337,16 +337,7 @@ var retrieveFileCmd = &cli.Command{
 			}
 		}
 
-		noIPFS := cctx.Bool(flagNoIPFS.Name)
-
-		// It's a conflict if --datamodel-path-selector is specified with
-		// --no-ipfs explicitly set to false
-		dmPathSelIsSet := cctx.IsSet(flagDmPathSel.Name)
-		noIPFSIsSet := cctx.IsSet(flagNoIPFS.Name)
-		noIPFSIsExplicitlyFalse := noIPFSIsSet && !noIPFS
-		if dmPathSelIsSet && noIPFSIsExplicitlyFalse {
-			return xerrors.Errorf("%s must be run with %s", flagDmPathSel.Name, flagNoIPFS.Name)
-		}
+		network := cctx.String("network")
 
 		c, err := cid.Decode(cidStr)
 		if err != nil {
@@ -417,9 +408,28 @@ var retrieveFileCmd = &cli.Command{
 
 		// Do the retrieval
 
-		stats, err := node.RetrieveFromBestCandidate(cctx.Context, fc, c, selNode, candidates, CandidateSelectionConfig{
-			tryIPFS: !noIPFS,
-		})
+		var networks []interface{}
+
+		if network == NetworkIPFS || network == NetworkAuto {
+			networks = append(networks, IPFSRetrievalConfig{
+				Cid: c,
+			})
+		}
+
+		if network == NetworkFIL || network == NetworkAuto {
+			networks = append(networks, FILRetrievalConfig{
+				FilClient:  fc,
+				Cid:        c,
+				Candidates: candidates,
+				SelNode:    selNode,
+			})
+		}
+
+		if len(networks) == 0 {
+			log.Fatalf("Unknown --network value \"%s\"", network)
+		}
+
+		stats, err := node.RetrieveFromBestCandidate(cctx.Context, networks)
 		if err != nil {
 			return err
 		}

@@ -29,22 +29,24 @@ import (
 	"golang.org/x/xerrors"
 )
 
+type IPFSRetrievalConfig struct {
+	Cid cid.Cid
+}
+
+type FILRetrievalConfig struct {
+	FilClient  *filclient.FilClient
+	Cid        cid.Cid
+	Candidates []RetrievalCandidate
+	SelNode    ipld.Node
+
+	// Disable sorting of candidates based on preferability
+	NoSort bool
+}
+
 type RetrievalCandidate struct {
 	Miner   address.Address
 	RootCid cid.Cid
 	DealID  uint
-}
-
-type CandidateSelectionConfig struct {
-	// Whether retrieval over IPFS is preferred if available
-	tryIPFS bool
-
-	// If true, candidates will be tried in the order they're passed in
-	// unchanged (and all other sorting-related options will be ignored)
-	noSort bool
-}
-
-type RetrievalResults struct {
 }
 
 func (node *Node) GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, error) {
@@ -112,30 +114,31 @@ func (stats *IPFSRetrievalStats) GetAverageBytesPerSecond() uint64 {
 	return uint64(float64(stats.ByteSize) / stats.Duration.Seconds())
 }
 
+// Takes a list of network configs to attempt to retrieve from, in order. Valid
+// structs for the interface: IPFSRetrievalConfig, FILRetrievalConfig
 func (node *Node) RetrieveFromBestCandidate(
 	ctx context.Context,
-	fc *filclient.FilClient,
-	c cid.Cid,
-	selNode ipld.Node,
-	candidates []RetrievalCandidate,
-	cfg CandidateSelectionConfig,
+	networks []interface{},
 ) (RetrievalStats, error) {
-	// Try IPFS first, if requested
-	if cfg.tryIPFS && (selNode == nil || selNode.IsNull()) {
-		stats, err := node.tryRetrieveFromIPFS(ctx, c)
-		if err != nil {
-			// If IPFS failed, log the error and continue on to FIL attempt
-			log.Infof("Bitswap retrieval failed: %v", err) // TODO: handle errors specifically
-		} else {
+	for _, config := range networks {
+		switch config := config.(type) {
+		case IPFSRetrievalConfig:
+			stats, err := node.tryRetrieveFromIPFS(ctx, config)
+			if err != nil {
+				log.Infof("IPFS retrieval failed: %v", err)
+				continue
+			}
 			return stats, nil
+		case FILRetrievalConfig:
+			stats, err := node.tryRetrieveFromFIL(ctx, config)
+			if err != nil {
+				log.Infof("FIL retrieval failed: %v", err)
+				continue
+			}
+			return stats, nil
+		default:
+			log.Errorf("Unknown retrieval config type %T", config)
 		}
-	}
-
-	stats, err := node.tryRetrieveFromFIL(ctx, fc, c, selNode, candidates, cfg)
-	if err != nil {
-		log.Error(err) // TODO
-	} else {
-		return stats, err
 	}
 
 	return nil, fmt.Errorf("all retrieval attempts failed")
@@ -143,15 +146,11 @@ func (node *Node) RetrieveFromBestCandidate(
 
 func (node *Node) tryRetrieveFromFIL(
 	ctx context.Context,
-	fc *filclient.FilClient,
-	c cid.Cid,
-	selNode ipld.Node,
-	candidates []RetrievalCandidate,
-	cfg CandidateSelectionConfig,
+	config FILRetrievalConfig,
 ) (*FILRetrievalStats, error) {
 
 	// If no miners are provided, there's nothing else we can do
-	if len(candidates) == 0 {
+	if len(config.Candidates) == 0 {
 		log.Info("No miners were provided, will not attempt FIL retrieval")
 		return nil, xerrors.Errorf("retrieval failed: no miners were provided")
 	}
@@ -170,9 +169,9 @@ func (node *Node) tryRetrieveFromFIL(
 	var queriesLk sync.Mutex
 
 	var wg sync.WaitGroup
-	wg.Add(len(candidates))
+	wg.Add(len(config.Candidates))
 
-	for _, candidate := range candidates {
+	for _, candidate := range config.Candidates {
 
 		// Copy into loop, cursed go
 		candidate := candidate
@@ -180,7 +179,7 @@ func (node *Node) tryRetrieveFromFIL(
 		go func() {
 			defer wg.Done()
 
-			query, err := fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
+			query, err := config.FilClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				log.Debugf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
 				return
@@ -189,14 +188,14 @@ func (node *Node) tryRetrieveFromFIL(
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
 			checked++
-			fmt.Fprintf(os.Stderr, "%v/%v\r", checked, len(candidates))
+			fmt.Fprintf(os.Stderr, "%v/%v\r", checked, len(config.Candidates))
 			queriesLk.Unlock()
 		}()
 	}
 
 	wg.Wait()
 
-	log.Infof("Got back %v retrieval query results of a total of %v candidates", len(queries), len(candidates))
+	log.Infof("Got back %v retrieval query results of a total of %v candidates", len(queries), len(config.Candidates))
 
 	if len(queries) == 0 {
 		return nil, xerrors.Errorf("retrieval failed: queries failed for all miners")
@@ -205,7 +204,7 @@ func (node *Node) tryRetrieveFromFIL(
 	// After we got the query results, sort them with respect to the candidate
 	// selection config as long as noSort isn't requested (TODO - more options)
 
-	if !cfg.noSort {
+	if !config.NoSort {
 		sort.Slice(queries, func(i, j int) bool {
 			a := queries[i].Response
 			b := queries[i].Response
@@ -238,21 +237,26 @@ func (node *Node) tryRetrieveFromFIL(
 	for _, query := range queries {
 		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s)", query.Candidate.Miner, query.Candidate.RootCid, types.FIL(totalCost(query.Response)))
 
-		if selNode != nil && !selNode.IsNull() {
-			log.Infof("Using selector %s", selNode)
+		if config.SelNode != nil && !config.SelNode.IsNull() {
+			log.Infof("Using selector %s", config.SelNode)
 		}
 
-		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, selNode)
+		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, config.SelNode)
 		if err != nil {
 			log.Debugf("Failed to create retrieval proposal with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
 		}
 
 		var bytesReceived uint64
-		stats_, err := fc.RetrieveContentWithProgressCallback(ctx, query.Candidate.Miner, proposal, func(bytesReceived_ uint64) {
-			bytesReceived = bytesReceived_
-			printProgress(bytesReceived)
-		})
+		stats_, err := config.FilClient.RetrieveContentWithProgressCallback(
+			ctx,
+			query.Candidate.Miner,
+			proposal,
+			func(bytesReceived_ uint64) {
+				bytesReceived = bytesReceived_
+				printProgress(bytesReceived)
+			},
+		)
 		if err != nil {
 			log.Errorf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
 			continue
@@ -271,13 +275,13 @@ func (node *Node) tryRetrieveFromFIL(
 	return stats, nil
 }
 
-func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetrievalStats, error) {
+func (node *Node) tryRetrieveFromIPFS(ctx context.Context, config IPFSRetrievalConfig) (*IPFSRetrievalStats, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	log.Info("Searching IPFS for CID...")
 
-	providers := node.DHT.FindProvidersAsync(ctx, c, 0)
+	providers := node.DHT.FindProvidersAsync(ctx, config.Cid, 0)
 
 	// Ready will be true if we connected to at least one provider, false if no
 	// miners successfully connected
@@ -353,7 +357,7 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, c cid.Cid) (*IPFSRetr
 		}
 
 		return node.Links(), nil
-	}, c, cset.Visit, merkledag.Concurrent()); err != nil {
+	}, config.Cid, cset.Visit, merkledag.Concurrent()); err != nil {
 		return nil, err
 	}
 

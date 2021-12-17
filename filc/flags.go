@@ -33,9 +33,19 @@ var flagOutput = &cli.StringFlag{
 	Aliases: []string{"o"},
 }
 
-var flagNoIPFS = &cli.BoolFlag{
-	Name: "no-ipfs",
+var flagNetwork = &cli.StringFlag{
+	Name:        "network",
+	Aliases:     []string{"n"},
+	Usage:       "which network to retrieve from [fil|ipfs|auto]",
+	DefaultText: NetworkAuto,
+	Value:       NetworkAuto,
 }
+
+const (
+	NetworkFIL  = "fil"
+	NetworkIPFS = "ipfs"
+	NetworkAuto = "auto"
+)
 
 var flagDmPathSel = &cli.StringFlag{
 	Name:  "datamodel-path-selector",
