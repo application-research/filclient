@@ -29,259 +29,23 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type IPFSRetrievalConfig struct {
+// A retrieval attempt is a configuration for performing a specific retrieval
+// over a specific network
+type RetrievalAttempt interface {
+	Retrieve(context.Context, *Node) (RetrievalStats, error)
+}
+
+type IPFSRetrievalAttempt struct {
 	Cid cid.Cid
 }
 
-type FILRetrievalConfig struct {
-	FilClient  *filclient.FilClient
-	Cid        cid.Cid
-	Candidates []RetrievalCandidate
-	SelNode    ipld.Node
-
-	// Disable sorting of candidates based on preferability
-	NoSort bool
-}
-
-type RetrievalCandidate struct {
-	Miner   address.Address
-	RootCid cid.Cid
-	DealID  uint
-}
-
-func (node *Node) GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, error) {
-
-	endpointURL, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, xerrors.Errorf("endpoint %s is not a valid url", endpoint)
-	}
-	endpointURL.Path = path.Join(endpointURL.Path, c.String())
-
-	resp, err := http.Get(endpointURL.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http request to endpoint %s got status %v", endpointURL, resp.StatusCode)
-	}
-
-	var res []RetrievalCandidate
-
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, xerrors.Errorf("could not unmarshal http response for cid %s", c)
-	}
-
-	return res, nil
-}
-
-type RetrievalStats interface {
-	GetByteSize() uint64
-	GetDuration() time.Duration
-	GetAverageBytesPerSecond() uint64
-}
-
-type FILRetrievalStats struct {
-	filclient.RetrievalStats
-}
-
-func (stats *FILRetrievalStats) GetByteSize() uint64 {
-	return stats.Size
-}
-
-func (stats *FILRetrievalStats) GetDuration() time.Duration {
-	return stats.Duration
-}
-
-func (stats *FILRetrievalStats) GetAverageBytesPerSecond() uint64 {
-	return stats.AverageSpeed
-}
-
-type IPFSRetrievalStats struct {
-	ByteSize uint64
-	Duration time.Duration
-}
-
-func (stats *IPFSRetrievalStats) GetByteSize() uint64 {
-	return stats.ByteSize
-}
-
-func (stats *IPFSRetrievalStats) GetDuration() time.Duration {
-	return stats.Duration
-}
-
-func (stats *IPFSRetrievalStats) GetAverageBytesPerSecond() uint64 {
-	return uint64(float64(stats.ByteSize) / stats.Duration.Seconds())
-}
-
-// Takes a list of network configs to attempt to retrieve from, in order. Valid
-// structs for the interface: IPFSRetrievalConfig, FILRetrievalConfig
-func (node *Node) RetrieveFromBestCandidate(
-	ctx context.Context,
-	networks []interface{},
-) (RetrievalStats, error) {
-	for _, config := range networks {
-		switch config := config.(type) {
-		case IPFSRetrievalConfig:
-			stats, err := node.tryRetrieveFromIPFS(ctx, config)
-			if err != nil {
-				log.Infof("IPFS retrieval failed: %v", err)
-				continue
-			}
-			return stats, nil
-		case FILRetrievalConfig:
-			stats, err := node.tryRetrieveFromFIL(ctx, config)
-			if err != nil {
-				log.Infof("FIL retrieval failed: %v", err)
-				continue
-			}
-			return stats, nil
-		default:
-			log.Errorf("Unknown retrieval config type %T", config)
-		}
-	}
-
-	return nil, fmt.Errorf("all retrieval attempts failed")
-}
-
-func (node *Node) tryRetrieveFromFIL(
-	ctx context.Context,
-	config FILRetrievalConfig,
-) (*FILRetrievalStats, error) {
-
-	// If no miners are provided, there's nothing else we can do
-	if len(config.Candidates) == 0 {
-		log.Info("No miners were provided, will not attempt FIL retrieval")
-		return nil, xerrors.Errorf("retrieval failed: no miners were provided")
-	}
-
-	// If IPFS retrieval was unavailable, do a full FIL retrieval. Start with
-	// querying all the candidates for sorting.
-
-	log.Info("Querying FIL retrieval candidates...")
-
-	type CandidateQuery struct {
-		Candidate RetrievalCandidate
-		Response  *retrievalmarket.QueryResponse
-	}
-	checked := 0
-	var queries []CandidateQuery
-	var queriesLk sync.Mutex
-
-	var wg sync.WaitGroup
-	wg.Add(len(config.Candidates))
-
-	for _, candidate := range config.Candidates {
-
-		// Copy into loop, cursed go
-		candidate := candidate
-
-		go func() {
-			defer wg.Done()
-
-			query, err := config.FilClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
-			if err != nil {
-				log.Debugf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
-				return
-			}
-
-			queriesLk.Lock()
-			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
-			checked++
-			fmt.Fprintf(os.Stderr, "%v/%v\r", checked, len(config.Candidates))
-			queriesLk.Unlock()
-		}()
-	}
-
-	wg.Wait()
-
-	log.Infof("Got back %v retrieval query results of a total of %v candidates", len(queries), len(config.Candidates))
-
-	if len(queries) == 0 {
-		return nil, xerrors.Errorf("retrieval failed: queries failed for all miners")
-	}
-
-	// After we got the query results, sort them with respect to the candidate
-	// selection config as long as noSort isn't requested (TODO - more options)
-
-	if !config.NoSort {
-		sort.Slice(queries, func(i, j int) bool {
-			a := queries[i].Response
-			b := queries[i].Response
-
-			// Always prefer unsealed to sealed, no matter what
-			if a.UnsealPrice.IsZero() && !b.UnsealPrice.IsZero() {
-				return true
-			}
-
-			// Select lower price, or continue if equal
-			aTotalPrice := totalCost(a)
-			bTotalPrice := totalCost(b)
-			if !aTotalPrice.Equals(bTotalPrice) {
-				return aTotalPrice.LessThan(bTotalPrice)
-			}
-
-			// Select smaller size, or continue if equal
-			if a.Size != b.Size {
-				return a.Size < b.Size
-			}
-
-			return false
-		})
-	}
-
-	// Now attempt retrievals in serial from first to last, until one works.
-	// stats will get set if a retrieval succeeds - if no retrievals work, it
-	// will still be nil after the loop finishes
-	var stats *FILRetrievalStats = nil
-	for _, query := range queries {
-		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s)", query.Candidate.Miner, query.Candidate.RootCid, types.FIL(totalCost(query.Response)))
-
-		if config.SelNode != nil && !config.SelNode.IsNull() {
-			log.Infof("Using selector %s", config.SelNode)
-		}
-
-		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, config.SelNode)
-		if err != nil {
-			log.Debugf("Failed to create retrieval proposal with candidate miner %s: %v", query.Candidate.Miner, err)
-			continue
-		}
-
-		var bytesReceived uint64
-		stats_, err := config.FilClient.RetrieveContentWithProgressCallback(
-			ctx,
-			query.Candidate.Miner,
-			proposal,
-			func(bytesReceived_ uint64) {
-				bytesReceived = bytesReceived_
-				printProgress(bytesReceived)
-			},
-		)
-		if err != nil {
-			log.Errorf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
-			continue
-		}
-
-		stats = &FILRetrievalStats{RetrievalStats: *stats_}
-		break
-	}
-
-	if stats == nil {
-		return nil, xerrors.New("retrieval failed for all miners")
-	}
-
-	log.Info("FIL retrieval succeeded")
-
-	return stats, nil
-}
-
-func (node *Node) tryRetrieveFromIPFS(ctx context.Context, config IPFSRetrievalConfig) (*IPFSRetrievalStats, error) {
+func (attempt *IPFSRetrievalAttempt) Retrieve(ctx context.Context, node *Node) (RetrievalStats, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	log.Info("Searching IPFS for CID...")
 
-	providers := node.DHT.FindProvidersAsync(ctx, config.Cid, 0)
+	providers := node.DHT.FindProvidersAsync(ctx, attempt.Cid, 0)
 
 	// Ready will be true if we connected to at least one provider, false if no
 	// miners successfully connected
@@ -357,7 +121,7 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, config IPFSRetrievalC
 		}
 
 		return node.Links(), nil
-	}, config.Cid, cset.Visit, merkledag.Concurrent()); err != nil {
+	}, attempt.Cid, cset.Visit, merkledag.Concurrent()); err != nil {
 		return nil, err
 	}
 
@@ -367,6 +131,227 @@ func (node *Node) tryRetrieveFromIPFS(ctx context.Context, config IPFSRetrievalC
 		ByteSize: bytesRetrieved,
 		Duration: time.Since(startTime),
 	}, nil
+}
+
+type FILRetrievalAttempt struct {
+	FilClient  *filclient.FilClient
+	Cid        cid.Cid
+	Candidates []FILRetrievalCandidate
+	SelNode    ipld.Node
+
+	// Disable sorting of candidates based on preferability
+	NoSort bool
+}
+
+func (attempt *FILRetrievalAttempt) Retrieve(ctx context.Context, node *Node) (RetrievalStats, error) {
+	// If no miners are provided, there's nothing else we can do
+	if len(attempt.Candidates) == 0 {
+		log.Info("No miners were provided, will not attempt FIL retrieval")
+		return nil, xerrors.Errorf("retrieval failed: no miners were provided")
+	}
+
+	// If IPFS retrieval was unavailable, do a full FIL retrieval. Start with
+	// querying all the candidates for sorting.
+
+	log.Info("Querying FIL retrieval candidates...")
+
+	type CandidateQuery struct {
+		Candidate FILRetrievalCandidate
+		Response  *retrievalmarket.QueryResponse
+	}
+	checked := 0
+	var queries []CandidateQuery
+	var queriesLk sync.Mutex
+
+	var wg sync.WaitGroup
+	wg.Add(len(attempt.Candidates))
+
+	for _, candidate := range attempt.Candidates {
+
+		// Copy into loop, cursed go
+		candidate := candidate
+
+		go func() {
+			defer wg.Done()
+
+			query, err := attempt.FilClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
+			if err != nil {
+				log.Debugf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
+				return
+			}
+
+			queriesLk.Lock()
+			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
+			checked++
+			fmt.Fprintf(os.Stderr, "%v/%v\r", checked, len(attempt.Candidates))
+			queriesLk.Unlock()
+		}()
+	}
+
+	wg.Wait()
+
+	log.Infof("Got back %v retrieval query results of a total of %v candidates", len(queries), len(attempt.Candidates))
+
+	if len(queries) == 0 {
+		return nil, xerrors.Errorf("retrieval failed: queries failed for all miners")
+	}
+
+	// After we got the query results, sort them with respect to the candidate
+	// selection config as long as noSort isn't requested (TODO - more options)
+
+	if !attempt.NoSort {
+		sort.Slice(queries, func(i, j int) bool {
+			a := queries[i].Response
+			b := queries[i].Response
+
+			// Always prefer unsealed to sealed, no matter what
+			if a.UnsealPrice.IsZero() && !b.UnsealPrice.IsZero() {
+				return true
+			}
+
+			// Select lower price, or continue if equal
+			aTotalPrice := totalCost(a)
+			bTotalPrice := totalCost(b)
+			if !aTotalPrice.Equals(bTotalPrice) {
+				return aTotalPrice.LessThan(bTotalPrice)
+			}
+
+			// Select smaller size, or continue if equal
+			if a.Size != b.Size {
+				return a.Size < b.Size
+			}
+
+			return false
+		})
+	}
+
+	// Now attempt retrievals in serial from first to last, until one works.
+	// stats will get set if a retrieval succeeds - if no retrievals work, it
+	// will still be nil after the loop finishes
+	var stats *FILRetrievalStats = nil
+	for _, query := range queries {
+		log.Infof("Attempting FIL retrieval with miner %s from root CID %s (%s)", query.Candidate.Miner, query.Candidate.RootCid, types.FIL(totalCost(query.Response)))
+
+		if attempt.SelNode != nil && !attempt.SelNode.IsNull() {
+			log.Infof("Using selector %s", attempt.SelNode)
+		}
+
+		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, attempt.SelNode)
+		if err != nil {
+			log.Debugf("Failed to create retrieval proposal with candidate miner %s: %v", query.Candidate.Miner, err)
+			continue
+		}
+
+		var bytesReceived uint64
+		stats_, err := attempt.FilClient.RetrieveContentWithProgressCallback(
+			ctx,
+			query.Candidate.Miner,
+			proposal,
+			func(bytesReceived_ uint64) {
+				bytesReceived = bytesReceived_
+				printProgress(bytesReceived)
+			},
+		)
+		if err != nil {
+			log.Errorf("Failed to retrieve content with candidate miner %s: %v", query.Candidate.Miner, err)
+			continue
+		}
+
+		stats = &FILRetrievalStats{RetrievalStats: *stats_}
+		break
+	}
+
+	if stats == nil {
+		return nil, xerrors.New("retrieval failed for all miners")
+	}
+
+	log.Info("FIL retrieval succeeded")
+
+	return stats, nil
+}
+
+type FILRetrievalCandidate struct {
+	Miner   address.Address
+	RootCid cid.Cid
+	DealID  uint
+}
+
+func (node *Node) GetRetrievalCandidates(endpoint string, c cid.Cid) ([]FILRetrievalCandidate, error) {
+
+	endpointURL, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, xerrors.Errorf("endpoint %s is not a valid url", endpoint)
+	}
+	endpointURL.Path = path.Join(endpointURL.Path, c.String())
+
+	resp, err := http.Get(endpointURL.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http request to endpoint %s got status %v", endpointURL, resp.StatusCode)
+	}
+
+	var res []FILRetrievalCandidate
+
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, xerrors.Errorf("could not unmarshal http response for cid %s", c)
+	}
+
+	return res, nil
+}
+
+type RetrievalStats interface {
+	GetByteSize() uint64
+	GetDuration() time.Duration
+	GetAverageBytesPerSecond() uint64
+}
+
+type FILRetrievalStats struct {
+	filclient.RetrievalStats
+}
+
+func (stats *FILRetrievalStats) GetByteSize() uint64 {
+	return stats.Size
+}
+
+func (stats *FILRetrievalStats) GetDuration() time.Duration {
+	return stats.Duration
+}
+
+func (stats *FILRetrievalStats) GetAverageBytesPerSecond() uint64 {
+	return stats.AverageSpeed
+}
+
+type IPFSRetrievalStats struct {
+	ByteSize uint64
+	Duration time.Duration
+}
+
+func (stats *IPFSRetrievalStats) GetByteSize() uint64 {
+	return stats.ByteSize
+}
+
+func (stats *IPFSRetrievalStats) GetDuration() time.Duration {
+	return stats.Duration
+}
+
+func (stats *IPFSRetrievalStats) GetAverageBytesPerSecond() uint64 {
+	return uint64(float64(stats.ByteSize) / stats.Duration.Seconds())
+}
+
+// Takes a list of network configs to attempt to retrieve from, in order. Valid
+// structs for the interface: IPFSRetrievalConfig, FILRetrievalConfig
+func (node *Node) RetrieveFromBestCandidate(
+	ctx context.Context,
+	attempts []RetrievalAttempt,
+) (RetrievalStats, error) {
+	for _, attempt := range attempts {
+		attempt.Retrieve(ctx, node)
+	}
+
+	return nil, fmt.Errorf("all retrieval attempts failed")
 }
 
 func totalCost(qres *retrievalmarket.QueryResponse) big.Int {

@@ -389,10 +389,10 @@ var retrieveFileCmd = &cli.Command{
 		// candidate list. Otherwise, we can use the auto retrieve API endpoint
 		// to automatically find some candidates to retrieve from.
 
-		var candidates []RetrievalCandidate
+		var candidates []FILRetrievalCandidate
 		if len(miners) > 0 {
 			for _, miner := range miners {
-				candidates = append(candidates, RetrievalCandidate{
+				candidates = append(candidates, FILRetrievalCandidate{
 					Miner:   miner,
 					RootCid: c,
 				})
@@ -409,7 +409,7 @@ var retrieveFileCmd = &cli.Command{
 
 		// Do the retrieval
 
-		var networks []interface{}
+		var networks []RetrievalAttempt
 
 		if network == NetworkIPFS || network == NetworkAuto {
 			if selNode != nil && !selNode.IsNull() {
@@ -420,14 +420,14 @@ var retrieveFileCmd = &cli.Command{
 					log.Info("A selector node has been specified, skipping IPFS")
 				}
 			} else {
-				networks = append(networks, IPFSRetrievalConfig{
+				networks = append(networks, &IPFSRetrievalAttempt{
 					Cid: c,
 				})
 			}
 		}
 
 		if network == NetworkFIL || network == NetworkAuto {
-			networks = append(networks, FILRetrievalConfig{
+			networks = append(networks, &FILRetrievalAttempt{
 				FilClient:  fc,
 				Cid:        c,
 				Candidates: candidates,
