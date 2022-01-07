@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/application-research/filclient/retrievehelper"
@@ -307,7 +308,7 @@ var retrieveFileCmd = &cli.Command{
 	Flags: []cli.Flag{
 		flagMiners,
 		flagOutput,
-		flagNoIPFS,
+		flagNetwork,
 		flagDmPathSel,
 	},
 	Action: func(cctx *cli.Context) error {
@@ -337,16 +338,7 @@ var retrieveFileCmd = &cli.Command{
 			}
 		}
 
-		noIPFS := cctx.Bool(flagNoIPFS.Name)
-
-		// It's a conflict if --datamodel-path-selector is specified with
-		// --no-ipfs explicitly set to false
-		dmPathSelIsSet := cctx.IsSet(flagDmPathSel.Name)
-		noIPFSIsSet := cctx.IsSet(flagNoIPFS.Name)
-		noIPFSIsExplicitlyFalse := noIPFSIsSet && !noIPFS
-		if dmPathSelIsSet && noIPFSIsExplicitlyFalse {
-			return xerrors.Errorf("%s must be run with %s", flagDmPathSel.Name, flagNoIPFS.Name)
-		}
+		network := strings.ToLower(strings.TrimSpace(cctx.String("network")))
 
 		c, err := cid.Decode(cidStr)
 		if err != nil {
@@ -397,10 +389,10 @@ var retrieveFileCmd = &cli.Command{
 		// candidate list. Otherwise, we can use the auto retrieve API endpoint
 		// to automatically find some candidates to retrieve from.
 
-		var candidates []RetrievalCandidate
+		var candidates []FILRetrievalCandidate
 		if len(miners) > 0 {
 			for _, miner := range miners {
-				candidates = append(candidates, RetrievalCandidate{
+				candidates = append(candidates, FILRetrievalCandidate{
 					Miner:   miner,
 					RootCid: c,
 				})
@@ -417,9 +409,37 @@ var retrieveFileCmd = &cli.Command{
 
 		// Do the retrieval
 
-		stats, err := node.RetrieveFromBestCandidate(cctx.Context, fc, c, selNode, candidates, CandidateSelectionConfig{
-			tryIPFS: !noIPFS,
-		})
+		var networks []RetrievalAttempt
+
+		if network == NetworkIPFS || network == NetworkAuto {
+			if selNode != nil && !selNode.IsNull() {
+				// Selector nodes are not compatible with IPFS
+				if network == NetworkIPFS {
+					log.Fatal("IPFS is not compatible with selector node")
+				} else {
+					log.Info("A selector node has been specified, skipping IPFS")
+				}
+			} else {
+				networks = append(networks, &IPFSRetrievalAttempt{
+					Cid: c,
+				})
+			}
+		}
+
+		if network == NetworkFIL || network == NetworkAuto {
+			networks = append(networks, &FILRetrievalAttempt{
+				FilClient:  fc,
+				Cid:        c,
+				Candidates: candidates,
+				SelNode:    selNode,
+			})
+		}
+
+		if len(networks) == 0 {
+			log.Fatalf("Unknown --network value \"%s\"", network)
+		}
+
+		stats, err := node.RetrieveFromBestCandidate(cctx.Context, networks)
 		if err != nil {
 			return err
 		}
