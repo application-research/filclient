@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -65,27 +66,31 @@ func TestMain(t *testing.T) {
 
 	app := cli.NewApp()
 
+	os.Setenv("FULLNODE_API_INFO", "")
+
 	app.Action = func(cctx *cli.Context) error {
+
+		// Test network initialization
+
+		fmt.Printf("Initializing test network...\n")
+
+		client, miner, ensemble := kit.EnsembleMinimal(t)
+		ensemble.InterconnectAll().BeginMining(250 * time.Millisecond)
+
+		// _ = kit.NewDealHarness(t, client, miner, miner)
+
+		fmt.Printf("Test network running on %s\n", client.ListenAddr)
+
+		// FilClient initialization
+
+		fmt.Printf("Initializing filclient...\n")
+
 		h := initHost(t)
 		api, closer := initAPI(t, cctx)
 		// addr := initAddress(t)
 		bs := initBlockstore(t)
 		ds := initDatastore(t)
 		defer closer()
-
-		// Test network initialization
-
-		fmt.Printf("Initializing test network...\n")
-
-		client, miner, ensemble := kit.EnsembleMinimal(t, kit.WithAllSubsystems())
-		ensemble.InterconnectAll().BeginMining(250 * time.Millisecond)
-
-		_ = kit.NewDealHarness(t, client, miner, miner)
-
-		// FilClient initialization
-
-		fmt.Printf("Initializing filclient...\n")
-
 		fc, err := NewClient(h, api, nil, address.Undef, bs, ds, t.TempDir())
 		if err != nil {
 			t.Fatalf("Could not initialize FilClient: %v", err)
