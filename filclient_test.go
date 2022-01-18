@@ -15,8 +15,12 @@ import (
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
+	lotusactors "github.com/filecoin-project/lotus/chain/actors"
+	lotusminer "github.com/filecoin-project/lotus/chain/actors/builtin/miner"
+	lotustypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/itests/kit"
+	filminer "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-datastore"
 	flatfs "github.com/ipfs/go-ds-flatfs"
@@ -28,6 +32,7 @@ import (
 	"github.com/ipfs/go-unixfs/importer"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
 )
 
@@ -74,15 +79,42 @@ func TestMain(t *testing.T) {
 
 		client, miner, ensemble := kit.EnsembleMinimal(t, kit.ThroughRPC(), kit.MockProofs())
 		ensemble.InterconnectAll().BeginMining(250 * time.Millisecond)
-		client.WaitTillChain(cctx.Context, kit.BlockMinedBy(miner.ActorAddr))
 
-		_ = kit.NewDealHarness(t, client, miner, miner)
+		// set the *optional* on-chain multiaddr
+		// the mind boggles: there is no API call for that - got to assemble your own msg
+		{
+			minfo, err := miner.FullNode.StateMinerInfo(cctx.Context, miner.ActorAddr, lotustypes.EmptyTSK)
+			if err != nil {
+				return err
+			}
 
-		fmt.Printf("Test network running on %s\n", client.ListenAddr)
+			maddrNop2p, _ := multiaddr.SplitFunc(miner.ListenAddr, func(c multiaddr.Component) bool {
+				return c.Protocol().Code == multiaddr.P_P2P
+			})
+
+			params, aerr := lotusactors.SerializeParams(&filminer.ChangeMultiaddrsParams{NewMultiaddrs: [][]byte{maddrNop2p.Bytes()}})
+			if aerr != nil {
+				return aerr
+			}
+
+			_, err = miner.FullNode.MpoolPushMessage(cctx.Context, &lotustypes.Message{
+				To:     miner.ActorAddr,
+				From:   minfo.Worker,
+				Value:  lotustypes.NewInt(0),
+				Method: lotusminer.Methods.ChangeMultiaddrs,
+				Params: params,
+			}, nil)
+			if err != nil {
+				return err
+			}
+		}
+
+		fmt.Printf("Test client fullnode running on %s\n", client.ListenAddr)
 		os.Setenv("FULLNODE_API_INFO", client.ListenAddr.String())
 
-		// FilClient initialization
+		client.WaitTillChain(cctx.Context, kit.BlockMinedBy(miner.ActorAddr))
 
+		// FilClient initialization
 		fmt.Printf("Initializing filclient...\n")
 
 		h := initHost(t)
@@ -97,7 +129,6 @@ func TestMain(t *testing.T) {
 		}
 
 		// Test data initialization
-
 		fmt.Printf("Initializing test data...\n")
 
 		bserv := blockservice.New(bs, nil)

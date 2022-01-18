@@ -17,7 +17,6 @@ require (
 	github.com/filecoin-project/go-state-types v0.1.1
 	github.com/filecoin-project/lotus v1.13.2-0.20211214230829-0e2278cc76d0
 	github.com/filecoin-project/specs-actors/v6 v6.0.1
-	github.com/golang/mock v1.6.0
 	github.com/ipfs/go-bitswap v0.5.1
 	github.com/ipfs/go-blockservice v0.2.1
 	github.com/ipfs/go-cid v0.1.0
