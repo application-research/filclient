@@ -66,20 +66,20 @@ func TestMain(t *testing.T) {
 
 	app := cli.NewApp()
 
-	os.Setenv("FULLNODE_API_INFO", "")
-
 	app.Action = func(cctx *cli.Context) error {
 
 		// Test network initialization
 
 		fmt.Printf("Initializing test network...\n")
 
-		client, miner, ensemble := kit.EnsembleMinimal(t)
+		client, miner, ensemble := kit.EnsembleMinimal(t, kit.ThroughRPC(), kit.MockProofs())
 		ensemble.InterconnectAll().BeginMining(250 * time.Millisecond)
+		client.WaitTillChain(cctx.Context, kit.BlockMinedBy(miner.ActorAddr))
 
-		// _ = kit.NewDealHarness(t, client, miner, miner)
+		_ = kit.NewDealHarness(t, client, miner, miner)
 
 		fmt.Printf("Test network running on %s\n", client.ListenAddr)
+		os.Setenv("FULLNODE_API_INFO", client.ListenAddr.String())
 
 		// FilClient initialization
 
@@ -130,7 +130,17 @@ func TestMain(t *testing.T) {
 		// Tests
 
 		t.Run("storage", func(t *testing.T) {
-			ask, err := fc.GetAsk(cctx.Context, miner.ActorAddr)
+			addr, err := miner.ActorAddress(cctx.Context)
+			if err != nil {
+				t.Fatalf("Could not get miner address: %s", err)
+			}
+
+			fmt.Printf("Testing storage deal for miner %s\n", addr)
+
+			ask, err := fc.GetAsk(cctx.Context, addr)
+			if err != nil {
+				t.Fatalf("Failed to get ask from miner: %v", err)
+			}
 
 			proposal, err := fc.MakeDeal(cctx.Context, miner.ActorAddr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
 			if err != nil {
