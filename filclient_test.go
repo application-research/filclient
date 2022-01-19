@@ -117,7 +117,12 @@ func TestMain(t *testing.T) {
 		// FilClient initialization
 		fmt.Printf("Initializing filclient...\n")
 
-		h := initHost(t)
+		// h := initHost(t)
+		h, err := ensemble.MN.GenPeer()
+		if err != nil {
+			t.Fatalf("Could not gen p2p peer: %v", err)
+		}
+		ensemble.MN.LinkAll()
 		api, closer := initAPI(t, cctx)
 		// addr := initAddress(t)
 		bs := initBlockstore(t)
@@ -162,6 +167,7 @@ func TestMain(t *testing.T) {
 
 		t.Run("storage", func(t *testing.T) {
 			addr, err := miner.ActorAddress(cctx.Context)
+			fmt.Printf("Actor address: %s\n", addr)
 			if err != nil {
 				t.Fatalf("Could not get miner address: %s", err)
 			}
@@ -173,7 +179,7 @@ func TestMain(t *testing.T) {
 				t.Fatalf("Failed to get ask from miner: %v", err)
 			}
 
-			proposal, err := fc.MakeDeal(cctx.Context, miner.ActorAddr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
+			proposal, err := fc.MakeDeal(cctx.Context, addr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
 			if err != nil {
 				t.Fatalf("Failed to make deal with miner: %v", err)
 			}
