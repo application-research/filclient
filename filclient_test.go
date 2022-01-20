@@ -15,12 +15,12 @@ import (
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
 	lotusactors "github.com/filecoin-project/lotus/chain/actors"
-	lotusminer "github.com/filecoin-project/lotus/chain/actors/builtin/miner"
 	lotustypes "github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/itests/kit"
 	lotusrepo "github.com/filecoin-project/lotus/node/repo"
+	filbuiltin "github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	filminer "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-datastore"
@@ -109,7 +109,7 @@ func TestMain(t *testing.T) {
 				To:     miner.ActorAddr,
 				From:   minfo.Worker,
 				Value:  lotustypes.NewInt(0),
-				Method: lotusminer.Methods.ChangeMultiaddrs,
+				Method: filbuiltin.MethodsMiner.ChangeMultiaddrs,
 				Params: params,
 			}, nil)
 			if err != nil {
