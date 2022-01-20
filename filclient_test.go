@@ -137,11 +137,11 @@ func TestMain(t *testing.T) {
 		_, err = wallet.WalletImport(ctx, ki)
 		require.NoError(t, err)
 
-		h, err := ensemble.MN.GenPeer()
+		h, err := ensemble.Mocknet().GenPeer()
 		if err != nil {
 			t.Fatalf("Could not gen p2p peer: %v", err)
 		}
-		ensemble.MN.LinkAll()
+		ensemble.Mocknet().LinkAll()
 		api, closer := initAPI(t, cctx)
 		bs := initBlockstore(t)
 		ds := initDatastore(t)

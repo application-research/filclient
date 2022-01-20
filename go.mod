@@ -53,4 +53,4 @@ require (
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
 
-replace github.com/filecoin-project/lotus => github.com/elijaharita/lotus v1.13.2-0.20220119204337-16e2b12c47e5
+replace github.com/filecoin-project/lotus => github.com/elijaharita/lotus v1.13.2-0.20220120044422-5ea68c3d75a0
