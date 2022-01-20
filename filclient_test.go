@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-jsonrpc"
@@ -18,8 +17,10 @@ import (
 	lotusactors "github.com/filecoin-project/lotus/chain/actors"
 	lotusminer "github.com/filecoin-project/lotus/chain/actors/builtin/miner"
 	lotustypes "github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/itests/kit"
+	lotusrepo "github.com/filecoin-project/lotus/node/repo"
 	filminer "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-datastore"
@@ -30,9 +31,8 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
-	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
 )
 
@@ -73,17 +73,25 @@ func TestMain(t *testing.T) {
 
 	app.Action = func(cctx *cli.Context) error {
 
+		ctx := cctx.Context
+
 		// Test network initialization
 
 		fmt.Printf("Initializing test network...\n")
 
-		client, miner, ensemble := kit.EnsembleMinimal(t, kit.ThroughRPC(), kit.MockProofs())
-		ensemble.InterconnectAll().BeginMining(250 * time.Millisecond)
+		kit.EnableLargeSectors(t)
+		kit.QuietMiningLogs()
+		client, miner, ensemble := kit.EnsembleMinimal(t,
+			kit.ThroughRPC(),        // so filclient can talk to it
+			kit.MockProofs(),        // we don't care about proper sealing/proofs
+			kit.SectorSize(512<<20), // 512MiB sectors
+		)
+		ensemble.InterconnectAll().BeginMining(50 * time.Millisecond)
 
 		// set the *optional* on-chain multiaddr
 		// the mind boggles: there is no API call for that - got to assemble your own msg
 		{
-			minfo, err := miner.FullNode.StateMinerInfo(cctx.Context, miner.ActorAddr, lotustypes.EmptyTSK)
+			minfo, err := miner.FullNode.StateMinerInfo(ctx, miner.ActorAddr, lotustypes.EmptyTSK)
 			if err != nil {
 				return err
 			}
@@ -97,7 +105,7 @@ func TestMain(t *testing.T) {
 				return aerr
 			}
 
-			_, err = miner.FullNode.MpoolPushMessage(cctx.Context, &lotustypes.Message{
+			_, err = miner.FullNode.MpoolPushMessage(ctx, &lotustypes.Message{
 				To:     miner.ActorAddr,
 				From:   minfo.Worker,
 				Value:  lotustypes.NewInt(0),
@@ -112,23 +120,33 @@ func TestMain(t *testing.T) {
 		fmt.Printf("Test client fullnode running on %s\n", client.ListenAddr)
 		os.Setenv("FULLNODE_API_INFO", client.ListenAddr.String())
 
-		client.WaitTillChain(cctx.Context, kit.BlockMinedBy(miner.ActorAddr))
+		client.WaitTillChain(ctx, kit.BlockMinedBy(miner.ActorAddr))
 
 		// FilClient initialization
 		fmt.Printf("Initializing filclient...\n")
 
-		// h := initHost(t)
+		// give filc the pre-funded wallet from the client
+		ki, err := client.WalletExport(ctx, client.DefaultKey.Address)
+		require.NoError(t, err)
+		lr, err := lotusrepo.NewMemory(nil).Lock(lotusrepo.Wallet)
+		require.NoError(t, err)
+		ks, err := lr.KeyStore()
+		require.NoError(t, err)
+		wallet, err := wallet.NewWallet(ks)
+		require.NoError(t, err)
+		_, err = wallet.WalletImport(ctx, ki)
+		require.NoError(t, err)
+
 		h, err := ensemble.MN.GenPeer()
 		if err != nil {
 			t.Fatalf("Could not gen p2p peer: %v", err)
 		}
 		ensemble.MN.LinkAll()
 		api, closer := initAPI(t, cctx)
-		// addr := initAddress(t)
 		bs := initBlockstore(t)
 		ds := initDatastore(t)
 		defer closer()
-		fc, err := NewClient(h, api, nil, address.Undef, bs, ds, t.TempDir())
+		fc, err := NewClient(h, api, wallet, client.DefaultKey.Address, bs, ds, t.TempDir())
 		if err != nil {
 			t.Fatalf("Could not initialize FilClient: %v", err)
 		}
@@ -146,27 +164,12 @@ func TestMain(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Could not build test data DAG: %v", err)
 		}
-		// piece, err := client.ClientDealPieceCID(cctx.Context, obj.Cid())
-		// if err != nil {
-		// 	t.Fatalf("Could not get test data piece CID: %v", err)
-		// }
-
-		// dp := dh.DefaultStartDealParams()
-		// dp.DealStartEpoch = abi.ChainEpoch(4 << 10)
-		// dp.Data = &storagemarket.DataRef{
-		// 	TransferType: storagemarket.TTManual,
-		// 	Root:         obj.Cid(),
-		// 	PieceCid:     &piece.PieceCID,
-		// 	PieceSize:    piece.PieceSize.Unpadded(),
-		// }
-		// dh.StartDeal(cctx.Context, dp)
-
-		fmt.Printf("Starting tests...\n")
 
 		// Tests
+		fmt.Printf("Starting tests...\n")
 
 		t.Run("storage", func(t *testing.T) {
-			addr, err := miner.ActorAddress(cctx.Context)
+			addr, err := miner.ActorAddress(ctx)
 			fmt.Printf("Actor address: %s\n", addr)
 			if err != nil {
 				t.Fatalf("Could not get miner address: %s", err)
@@ -174,22 +177,23 @@ func TestMain(t *testing.T) {
 
 			fmt.Printf("Testing storage deal for miner %s\n", addr)
 
-			ask, err := fc.GetAsk(cctx.Context, addr)
+			ask, err := fc.GetAsk(ctx, addr)
 			if err != nil {
 				t.Fatalf("Failed to get ask from miner: %v", err)
 			}
 
-			proposal, err := fc.MakeDeal(cctx.Context, addr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
+			_, err = fc.LockMarketFunds(
+				ctx,
+				lotustypes.FIL(lotustypes.NewInt(1000000000000000)), // FIXME - no idea what's reasonable
+			)
+			require.NoError(t, err)
+
+			proposal, err := fc.MakeDeal(ctx, addr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
 			if err != nil {
 				t.Fatalf("Failed to make deal with miner: %v", err)
 			}
 
-			// proposalNode, err := cborutil.AsIpld(proposal.DealProposal)
-			// if err != nil {
-			// 	t.Fatalf("Failed to get proposal node: %v", err)
-			// }
-
-			proposalRes, err := fc.SendProposal(cctx.Context, proposal)
+			proposalRes, err := fc.SendProposal(ctx, proposal)
 			if err != nil {
 				t.Fatalf("Sending proposal failed: %v", err)
 			}
@@ -200,7 +204,7 @@ func TestMain(t *testing.T) {
 				t.Fatalf("Test deal was not accepted")
 			}
 
-			var chanid datatransfer.ChannelID
+			var chanid *datatransfer.ChannelID
 			var chanidLk sync.Mutex
 			res := make(chan error, 1)
 
@@ -213,7 +217,7 @@ func TestMain(t *testing.T) {
 
 			unsubscribe := fc.SubscribeToDataTransferEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 				chanidLk.Lock()
-				chanidCopy := chanid
+				chanidCopy := *chanid
 				chanidLk.Unlock()
 
 				// Skip messages not related to this channel
@@ -222,7 +226,7 @@ func TestMain(t *testing.T) {
 				}
 
 				switch event.Code {
-				case datatransfer.Complete:
+				case datatransfer.CleanupComplete: // FIXME previously this was waiting for a code that would never come - not sure if CleanupComplete is right here....
 					finish(nil)
 				case datatransfer.Error:
 					finish(fmt.Errorf("data transfer failed"))
@@ -231,8 +235,7 @@ func TestMain(t *testing.T) {
 			defer unsubscribe()
 
 			chanidLk.Lock()
-			chanid_, err := fc.StartDataTransfer(cctx.Context, miner.ActorAddr, proposalRes.Response.Proposal, obj.Cid())
-			chanid = *chanid_
+			chanid, err = fc.StartDataTransfer(ctx, miner.ActorAddr, proposalRes.Response.Proposal, obj.Cid())
 			chanidLk.Unlock()
 			if err != nil {
 				t.Fatalf("Failed to start data transfer")
@@ -246,13 +249,13 @@ func TestMain(t *testing.T) {
 			case <-cctx.Done():
 			}
 
-			if err := fc.dataTransfer.CloseDataTransferChannel(cctx.Context, chanid); err != nil {
+			if err := fc.dataTransfer.CloseDataTransferChannel(ctx, *chanid); err != nil {
 				t.Fatalf("Failed to close data transfer channel")
 			}
 		})
 
 		t.Run("retrieval", func(t *testing.T) {
-			// qres, err := fc.RetrievalQuery(cctx.Context, miner.ActorAddr, obj.Cid())
+			// qres, err := fc.RetrievalQuery(ctx, miner.ActorAddr, obj.Cid())
 			// if err != nil {
 			// 	t.Fatalf("Retrieval query failed: %v", err)
 			// }
@@ -270,15 +273,6 @@ func TestMain(t *testing.T) {
 
 // -- Setup functions
 
-func initHost(t *testing.T) host.Host {
-	h, err := libp2p.New()
-	if err != nil {
-		t.Fatalf("Could not initialize libp2p: %v", err)
-	}
-
-	return h
-}
-
 func initAPI(t *testing.T, cctx *cli.Context) (api.Gateway, jsonrpc.ClientCloser) {
 	api, closer, err := lcli.GetGatewayAPI(cctx)
 	if err != nil {
@@ -286,15 +280,6 @@ func initAPI(t *testing.T, cctx *cli.Context) (api.Gateway, jsonrpc.ClientCloser
 	}
 
 	return api, closer
-}
-
-func initAddress(t *testing.T) address.Address {
-	addr, err := address.NewFromString("127.0.0.1")
-	if err != nil {
-		t.Fatalf("Could not initialize address: %v", err)
-	}
-
-	return addr
 }
 
 func initBlockstore(t *testing.T) blockstore.Blockstore {
