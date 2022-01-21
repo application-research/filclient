@@ -47,7 +47,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	protocol "github.com/libp2p/go-libp2p-protocol"
+	protocol "github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -178,7 +178,7 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	).(*gsimpl.GraphSync)
 
 	dtn := dtnet.NewFromLibp2pHost(cfg.Host)
-	tpt := gst.NewTransport(cfg.Host.ID(), gse, dtn)
+	tpt := gst.NewTransport(cfg.Host.ID(), gse)
 
 	dtRestartConfig := dtimpl.ChannelRestartConfig(cfg.ChannelMonitorConfig)
 
@@ -187,7 +187,7 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		return nil, fmt.Errorf("failed to initialize cidlistsdir: %w", err)
 	}
 
-	mgr, err := dtimpl.NewDataTransfer(cfg.Datastore, cidlistsdirPath, dtn, tpt, dtRestartConfig)
+	mgr, err := dtimpl.NewDataTransfer(cfg.Datastore, dtn, tpt, dtRestartConfig)
 	if err != nil {
 		return nil, err
 	}
