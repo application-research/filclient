@@ -1126,6 +1126,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		}
 	}
 
+	rootCid := proposal.PayloadCID
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
 		chanidLk.Lock()
@@ -1237,21 +1238,15 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 			eventCodeNotHandled = true
 		}
 
-		var eventString string
 		name := datatransfer.Events[event.Code]
 		code := event.Code
 		msg := event.Message
-		if len(event.Message) != 0 {
-			eventString = fmt.Sprintf("\"%s\" (%v): %s", name, code, msg)
-		} else {
-			eventString = fmt.Sprintf("\"%s\" (%v)", name, code)
-		}
 
 		if eventCodeNotHandled {
-			log.Warnf("Unhandled event %s", eventString)
+			log.Warnw("unhandled retrieval event", "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg)
 		} else {
 			if !silenceEventCode {
-				log.Debugf("Processed event %s", eventString)
+				log.Debugw("retrieval event", "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg)
 			}
 		}
 	})
