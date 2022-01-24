@@ -11,8 +11,10 @@ import (
 	"time"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-jsonrpc"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	lotusactors "github.com/filecoin-project/lotus/chain/actors"
 	lotustypes "github.com/filecoin-project/lotus/chain/types"
@@ -63,6 +65,50 @@ func (reader *DummyDataGen) Read(p []byte) (int, error) {
 
 	return i, nil
 }
+
+func TestRetrieval(t *testing.T) {
+	app := cli.NewApp()
+	app.Action = func(cctx *cli.Context) error {
+		client, miner, ensemble, fc, closer := initEnsemble(t, cctx)
+		defer closer()
+
+		// Create dummy deal on miner
+		res, file := client.CreateImportFile(cctx.Context, 1, 256<<20)
+		pieceInfo, err := client.ClientDealPieceCID(cctx.Context, res.Root)
+		require.NoError(t, err)
+		dh := kit.NewDealHarness(t, client, miner, miner)
+		dp := dh.DefaultStartDealParams()
+		dp.DealStartEpoch = abi.ChainEpoch(4 << 10)
+		dp.Data = &storagemarket.DataRef{
+			TransferType: storagemarket.TTManual,
+			Root:         res.Root,
+			PieceCid:     &pieceInfo.PieceCID,
+			PieceSize:    pieceInfo.PieceSize.Unpadded(),
+		}
+		proposalCid := dh.StartDeal(cctx.Context, dp)
+		require.Eventually(t, func() bool {
+			cd, _ := client.ClientGetDealInfo(cctx.Context, *proposalCid)
+			return cd.State == storagemarket.StorageDealCheckForAcceptance
+		}, 30*time.Second, 1*time.Second)
+
+		carFileDir := t.TempDir()
+		carFilePath := filepath.Join(carFileDir, "out.car")
+		require.NoError(t, client.ClientGenCar(cctx.Context, api.FileRef{Path: file}, carFilePath))
+		require.NoError(t, miner.DealsImportData(cctx.Context, *proposalCid, carFilePath))
+
+		query, err := fc.RetrievalQuery(cctx.Context, miner.ActorAddr, res.Root)
+		err := fc.RetrieveContent(cctx.Context, miner.ActorAddr, &retrievalmarket.DealProposal{
+			PayloadCID: res.Root,
+			ID: query.,
+		})
+
+		return nil
+	}
+	if err := app.Run([]string{""}); err != nil {
+		t.Fatalf("App failed: %v", err)
+	}
+}
+
 func TestStorage(t *testing.T) {
 	app := cli.NewApp()
 	app.Action = func(cctx *cli.Context) error {
@@ -82,7 +128,6 @@ func TestStorage(t *testing.T) {
 		}
 
 		addr, err := miner.ActorAddress(ctx)
-		fmt.Printf("Actor address: %s\n", addr)
 		require.NoError(t, err)
 
 		fmt.Printf("Testing storage deal for miner %s\n", addr)
@@ -99,11 +144,16 @@ func TestStorage(t *testing.T) {
 		proposal, err := fc.MakeDeal(ctx, addr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
 		require.NoError(t, err)
 
+		fmt.Printf("Sending proposal\n")
+
 		proposalRes, err := fc.SendProposal(ctx, proposal)
 		require.NoError(t, err)
 
 		switch proposalRes.Response.State {
-		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
+		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealAcceptWait:
+			fmt.Printf("Waiting for data\n")
+		case storagemarket.StorageDealProposalAccepted:
+			fmt.Printf("Storage deal accepted but not yet waiting for data\n")
 		default:
 			t.Fatalf("Test deal was not accepted")
 		}
@@ -134,16 +184,18 @@ func TestStorage(t *testing.T) {
 				finish(nil)
 			case datatransfer.Error:
 				finish(fmt.Errorf("data transfer failed"))
+			default:
+				fmt.Printf("Other event code \"%s\" (%v)", datatransfer.Events[event.Code], event.Code)
 			}
 		})
 		defer unsubscribe()
 
+		fmt.Printf("Starting data transfer\n")
+
 		chanidLk.Lock()
 		chanid, err = fc.StartDataTransfer(ctx, miner.ActorAddr, proposalRes.Response.Proposal, obj.Cid())
 		chanidLk.Unlock()
-		if err != nil {
-			t.Fatalf("Failed to start data transfer")
-		}
+		require.NoError(t, err)
 
 		select {
 		case err := <-res:
@@ -157,7 +209,12 @@ func TestStorage(t *testing.T) {
 			t.Fatalf("Failed to close data transfer channel")
 		}
 
+		fmt.Printf("Data transfer finished\n")
+
 		return nil
+	}
+	if err := app.Run([]string{""}); err != nil {
+		t.Fatalf("App failed: %v", err)
 	}
 }
 
