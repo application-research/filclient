@@ -91,21 +91,24 @@ type FilClient struct {
 	graphSync *gsimpl.GraphSync
 
 	transport *gst.Transport
+
+	logRetrievalProgressEvents bool
 }
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
 type Config struct {
-	DataDir              string
-	GraphsyncOpts        []gsimpl.Option
-	Api                  api.Gateway
-	Wallet               *wallet.LocalWallet
-	Addr                 address.Address
-	Blockstore           blockstore.Blockstore
-	Datastore            datastore.Batching
-	Host                 host.Host
-	ChannelMonitorConfig channelmonitor.Config
-	RetrievalConfigurer  datatransfer.TransportConfigurer
+	DataDir                    string
+	GraphsyncOpts              []gsimpl.Option
+	Api                        api.Gateway
+	Wallet                     *wallet.LocalWallet
+	Addr                       address.Address
+	Blockstore                 blockstore.Blockstore
+	Datastore                  datastore.Batching
+	Host                       host.Host
+	ChannelMonitorConfig       channelmonitor.Config
+	RetrievalConfigurer        datatransfer.TransportConfigurer
+	LogRetrievalProgressEvents bool
 }
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
@@ -230,17 +233,18 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	*/
 
 	return &FilClient{
-		host:             cfg.Host,
-		api:              cfg.Api,
-		wallet:           cfg.Wallet,
-		ClientAddr:       cfg.Addr,
-		blockstore:       cfg.Blockstore,
-		dataTransfer:     mgr,
-		pchmgr:           pchmgr,
-		mpusher:          mpusher,
-		computePieceComm: GeneratePieceCommitment,
-		graphSync:        gse,
-		transport:        tpt,
+		host:                       cfg.Host,
+		api:                        cfg.Api,
+		wallet:                     cfg.Wallet,
+		ClientAddr:                 cfg.Addr,
+		blockstore:                 cfg.Blockstore,
+		dataTransfer:               mgr,
+		pchmgr:                     pchmgr,
+		mpusher:                    mpusher,
+		computePieceComm:           GeneratePieceCommitment,
+		graphSync:                  gse,
+		transport:                  tpt,
+		logRetrievalProgressEvents: cfg.LogRetrievalProgressEvents,
 	}, nil
 }
 
@@ -1127,6 +1131,8 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 	}
 
 	rootCid := proposal.PayloadCID
+	dealID := proposal.ID
+
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
 		chanidLk.Lock()
@@ -1241,12 +1247,13 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		name := datatransfer.Events[event.Code]
 		code := event.Code
 		msg := event.Message
-
+		blocksIndex := state.ReceivedCidsTotal()
+		totalReceived := state.Received()
 		if eventCodeNotHandled {
-			log.Warnw("unhandled retrieval event", "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg)
+			log.Warnw("unhandled retrieval event", "dealID", dealID, "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg, "blocksIndex", blocksIndex, "totalReceived", totalReceived)
 		} else {
-			if !silenceEventCode {
-				log.Debugw("retrieval event", "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg)
+			if !silenceEventCode || fc.logRetrievalProgressEvents {
+				log.Debugw("retrieval event", "dealID", dealID, "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg, "blocksIndex", blocksIndex, "totalReceived", totalReceived)
 			}
 		}
 	})
