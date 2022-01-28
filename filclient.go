@@ -566,6 +566,7 @@ func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, prop
 	if err != nil {
 		return nil, err
 	}
+	defer s.Close()
 
 	var resp network.DealStatusResponse
 	if err := doRpc(ctx, s, req, &resp); err != nil {
@@ -995,6 +996,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	if err != nil {
 		return nil, err
 	}
+	defer s.Close()
 
 	q := &retrievalmarket.Query{
 		PayloadCID: pcid,
