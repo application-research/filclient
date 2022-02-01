@@ -348,7 +348,10 @@ func (node *Node) RetrieveFromBestCandidate(
 	attempts []RetrievalAttempt,
 ) (RetrievalStats, error) {
 	for _, attempt := range attempts {
-		attempt.Retrieve(ctx, node)
+		stats, err := attempt.Retrieve(ctx, node)
+		if err == nil {
+			return stats, nil
+		}
 	}
 
 	return nil, fmt.Errorf("all retrieval attempts failed")
