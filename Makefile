@@ -65,9 +65,14 @@ deps: $(BUILD_DEPS)
 filclient:
 	go build
 
+.PHONY: filc
+filc: filclient
+	make -C filc
+
 .PHONY: clean
 clean:
 	rm -rf $(CLEAN) $(BINS)
+	make -C filc clean
 
 .PHONY: dist-clean
 dist-clean:
