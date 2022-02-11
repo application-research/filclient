@@ -182,7 +182,7 @@ var makeDealCmd = &cli.Command{
 		var cleanupDealPrep func()
 		switch {
 		case proto == filclient.DealProtocolv110:
-			_, err = fc.SendProposalV110(cctx.Context, miner, *proposal, propnd.Cid())
+			_, err = fc.SendProposalV110(cctx.Context, *proposal, propnd.Cid())
 		case proto == filclient.DealProtocolv120:
 			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, miner, *proposal, propnd.Cid(), dbid)
 		default:

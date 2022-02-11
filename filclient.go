@@ -100,7 +100,6 @@ type FilClient struct {
 
 	logRetrievalProgressEvents bool
 
-	libp2pDTServer    *httptransport.Libp2pCarServer
 	Libp2pTransferMgr *libp2pTransferManager
 }
 
@@ -269,7 +268,7 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	dtServer := httptransport.NewLibp2pCarServer(cfg.Host, authDB, cfg.Blockstore, cfg.Lp2pDTConfig.Server)
 
 	// Create a manager to watch for libp2p data transfer events
-	libp2pTransferMgr := newLibp2pTransferManager(dtServer, authDB, cfg.Lp2pDTConfig.TransferTimeout)
+	libp2pTransferMgr := newLibp2pTransferManager(dtServer, lp2pds, authDB, cfg.Lp2pDTConfig.TransferTimeout)
 	if err := libp2pTransferMgr.Start(context.TODO()); err != nil {
 		return nil, err
 	}
@@ -287,7 +286,6 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		graphSync:                  gse,
 		transport:                  tpt,
 		logRetrievalProgressEvents: cfg.LogRetrievalProgressEvents,
-		libp2pDTServer:             dtServer,
 		Libp2pTransferMgr:          libp2pTransferMgr,
 	}
 
@@ -299,14 +297,25 @@ func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 }
 
 func (fc *FilClient) DataTransferProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
+	addrInfo, err := fc.minerAddrInfo(ctx, miner)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if the peer store has supported protocols for the miner's peer
+	proto, err := fc.host.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv110, DealProtocolv120)
+	if err == nil && proto != "" {
+		return protocol.ID(proto), err
+	}
+
+	// Connect to the miner to get the protocols it supports
 	s, err := fc.streamToMiner(ctx, miner, DealProtocolv110, DealProtocolv120)
 	if err != nil {
 		return "", fmt.Errorf("connecting to miner %s: %w", miner, err)
 	}
 
-	proto := s.Protocol()
-	s.Close() //nolint:errcheck
-	return proto, nil
+	defer s.Close() //nolint:errcheck
+	return s.Protocol(), nil
 }
 
 func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol ...protocol.ID) (inet.Stream, error) {
@@ -330,20 +339,33 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 
 // Errors - ErrMinerConnectionFailed, ErrLotusError
 func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
+	addrInfo, err := fc.minerAddrInfo(ctx, maddr)
+	if err != nil {
+		return "", err
+	}
+
+	if err := fc.host.Connect(ctx, *addrInfo); err != nil {
+		return "", NewErrMinerConnectionFailed(err)
+	}
+
+	return addrInfo.ID, nil
+}
+
+func (fc *FilClient) minerAddrInfo(ctx context.Context, maddr address.Address) (*peer.AddrInfo, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		return "", NewErrLotusError(err)
+		return nil, NewErrLotusError(err)
 	}
 
 	if minfo.PeerId == nil {
-		return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no peer ID set", maddr))
+		return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no peer ID set", maddr))
 	}
 
 	var maddrs []multiaddr.Multiaddr
 	for _, mma := range minfo.Multiaddrs {
 		ma, err := multiaddr.NewMultiaddrBytes(mma)
 		if err != nil {
-			return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err))
+			return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err))
 		}
 		maddrs = append(maddrs, ma)
 	}
@@ -351,17 +373,20 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 	// FIXME - lotus-client-proper falls back on the DHT when it has a peerid but no multiaddr
 	// filc should do the same
 	if len(maddrs) == 0 {
-		return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no multiaddrs set on chain", maddr))
+		return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no multiaddrs set on chain", maddr))
 	}
 
 	if err := fc.host.Connect(ctx, peer.AddrInfo{
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
 	}); err != nil {
-		return "", NewErrMinerConnectionFailed(err)
+		return nil, NewErrMinerConnectionFailed(err)
 	}
 
-	return *minfo.PeerId, nil
+	return &peer.AddrInfo{
+		ID:    *minfo.PeerId,
+		Addrs: maddrs,
+	}, nil
 }
 
 func (fc *FilClient) openStreamToPeer(ctx context.Context, addr peer.AddrInfo, protocol protocol.ID) (inet.Stream, error) {
@@ -592,7 +617,7 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, netprop network.Propo
 
 	// Send proposal to provider using deal protocol v1.2.0 format
 	transferParams, err := json.Marshal(boosttypes.HttpRequest{
-		URL: announce.String(),
+		URL: "libp2p://" + announce.String(),
 		Headers: map[string]string{
 			"Authorization": httptransport.BasicAuthHeader("", authToken),
 		},
@@ -614,7 +639,7 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, netprop network.Propo
 	}
 	// TODO: Set a reasonable deadline to receive a response from the server
 	var resp smtypes.DealResponse
-	if err := doRpc(ctx, s, params, &resp); err != nil {
+	if err := doRpc(ctx, s, &params, &resp); err != nil {
 		return false, fmt.Errorf("send proposal rpc: %w", err)
 	}
 
@@ -831,8 +856,30 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 	}
 }
 
-func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[datatransfer.ChannelID]datatransfer.ChannelState, error) {
+func (fc *FilClient) V110TransfersInProgress(ctx context.Context) (map[datatransfer.ChannelID]datatransfer.ChannelState, error) {
 	return fc.dataTransfer.InProgressChannels(ctx)
+}
+
+func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[string]*ChannelState, error) {
+	v1dts, err := fc.dataTransfer.InProgressChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	v2dts, err := fc.Libp2pTransferMgr.All()
+	if err != nil {
+		return nil, err
+	}
+
+	dts := make(map[string]*ChannelState, len(v1dts)+len(v2dts))
+	for id, dt := range v1dts {
+		dts[id.String()] = ChannelStateConv(dt)
+	}
+	for id, dt := range v2dts {
+		dts[id] = &dt
+	}
+
+	return dts, nil
 }
 
 type GraphSyncDataTransfer struct {
@@ -987,6 +1034,18 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 		return nil, err
 	}
 
+	// Check if there's a storage deal transfer with the miner that matches the
+	// payload CID
+	// 1. over data transfer v1.2
+	xfer, err := fc.Libp2pTransferMgr.byRemoteAddrAndPayloadCid(string(mpid), content)
+	if err != nil {
+		return nil, err
+	}
+	if xfer != nil {
+		return xfer, nil
+	}
+
+	// 2. over data transfer v1.1
 	inprog, err := fc.dataTransfer.InProgressChannels(ctx)
 	if err != nil {
 		return nil, err

@@ -2,25 +2,30 @@ package filclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
-	"golang.org/x/xerrors"
-
 	"github.com/filecoin-project/boost/transport/httptransport"
 	boosttypes "github.com/filecoin-project/boost/transport/types"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/namespace"
+	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"golang.org/x/xerrors"
 )
 
 // libp2pTransferManager watches events for a libp2p data transfer
 type libp2pTransferManager struct {
 	dtServer    *httptransport.Libp2pCarServer
 	authDB      *httptransport.AuthTokenDB
+	dtds        datastore.Batching
 	xferTimeout time.Duration
+	ctx         context.Context
 	cancelCtx   context.CancelFunc
 	ticker      *time.Ticker
 
@@ -29,9 +34,11 @@ type libp2pTransferManager struct {
 	unsub      func()
 }
 
-func newLibp2pTransferManager(dtServer *httptransport.Libp2pCarServer, authDB *httptransport.AuthTokenDB, xferTimeout time.Duration) *libp2pTransferManager {
+func newLibp2pTransferManager(dtServer *httptransport.Libp2pCarServer, ds datastore.Batching, authDB *httptransport.AuthTokenDB, xferTimeout time.Duration) *libp2pTransferManager {
+	ds = namespace.Wrap(ds, datastore.NewKey("/data-transfers"))
 	return &libp2pTransferManager{
 		dtServer:    dtServer,
+		dtds:        ds,
 		authDB:      authDB,
 		xferTimeout: xferTimeout,
 	}
@@ -44,8 +51,7 @@ func (m *libp2pTransferManager) Stop() {
 }
 
 func (m *libp2pTransferManager) Start(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	m.cancelCtx = cancel
+	m.ctx, m.cancelCtx = context.WithCancel(ctx)
 
 	// Every minute, check transfers to see if any have expired
 	m.ticker = time.NewTicker(time.Minute)
@@ -62,58 +68,79 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 	// Delete expired auth tokens from the auth DB
 	expired, err := m.authDB.DeleteExpired(ctx, time.Now().Add(-m.xferTimeout))
 	if err != nil {
-		log.Errorf("deleting expired tokens from auth DB: %w", err)
+		log.Errorw("deleting expired tokens from auth DB", "err", err)
 		return
 	}
 
 	// For each expired auth token
 	for _, val := range expired {
-		// Get the transfer associated with the auth token
-		xfer, err := m.dtServer.Get(val.ID)
+		// Get the active transfer associated with the auth token
+		activeXfer, err := m.dtServer.Get(val.ID)
 		if err != nil && !xerrors.Is(err, httptransport.ErrTransferNotFound) {
-			log.Errorf("canceling transfer %s: %w", val.ID, err)
+			log.Errorw("getting transfer", "id", val.ID, "err", err)
 			continue
 		}
 
-		transferFound := err == nil || !xerrors.Is(err, httptransport.ErrTransferNotFound)
-		if transferFound {
+		// Note that there may not be an active transfer (it may have not
+		// started, errored out or completed)
+		if activeXfer != nil {
 			// Cancel the transfer
-			st, err := m.dtServer.CancelTransfer(ctx, val.ID)
+			_, err := m.dtServer.CancelTransfer(ctx, val.ID)
 			if err != nil && !xerrors.Is(err, httptransport.ErrTransferNotFound) {
-				log.Errorf("canceling transfer %s: %w", val.ID, err)
+				log.Errorw("canceling transfer", "id", val.ID, "err", err)
 				continue
 			}
+		}
 
-			// If the transfer had already completed, nothing more to do
-			if st.Status == boosttypes.TransferStatusCompleted {
-				continue
-			}
+		// Check if the transfer already completed
+		completedXfer, err := m.getCompletedTransfer(val.ID)
+		if err != nil && !xerrors.Is(err, datastore.ErrNotFound) {
+			log.Errorw("getting completed transfer", "id", val.ID, "err", err)
+			continue
+		}
+		// If the transfer had already completed, nothing more to do
+		if completedXfer != nil && completedXfer.Status == boosttypes.TransferStatusCompleted {
+			continue
+		}
+
+		m.listenerLk.Lock()
+		listener := m.listener
+		m.listenerLk.Unlock()
+		if listener == nil {
+			continue
 		}
 
 		// The transfer didn't start, or was canceled or errored out before
 		// completing, so fire a transfer error event
-		m.listenerLk.Lock()
-		if m.listener != nil {
-			dbid, err := strconv.ParseUint(val.ID, 10, 64)
-			if err != nil {
-				log.Warnf("cannot parse dbid '%s' in libp2p transfer manager event: %s", val.ID, err)
-				return
-			}
-
-			st := boosttypes.TransferState{
-				LocalAddr: m.dtServer.ID().String(),
-			}
-			if transferFound {
-				st = xfer.State()
-			}
-			st.Status = boosttypes.TransferStatusFailed
-			if st.Message == "" {
-				st.Message = fmt.Sprintf("timed out waiting %s for transfer to complete", m.xferTimeout)
-			}
-
-			m.listener(uint(dbid), m.toDTState(st))
+		dbid, err := strconv.ParseUint(val.ID, 10, 64)
+		if err != nil {
+			log.Errorw("parsing dbid in libp2p transfer manager event", "id", val.ID, "err", err)
+			continue
 		}
-		m.listenerLk.Unlock()
+
+		st := boosttypes.TransferState{
+			LocalAddr: m.dtServer.ID().String(),
+		}
+		if activeXfer != nil {
+			st = activeXfer.State()
+		}
+		st.Status = boosttypes.TransferStatusFailed
+		if st.Message == "" {
+			st.Message = fmt.Sprintf("timed out waiting %s for transfer to complete", m.xferTimeout)
+		}
+
+		if completedXfer == nil {
+			// Save the transfer status in persistent storage
+			err = m.saveCompletedTransfer(val.ID, st)
+			if err != nil {
+				log.Errorf("saving completed transfer: %s", err)
+				// TODO unlock
+				continue
+			}
+		}
+
+		// Fire transfer error event
+		listener(uint(dbid), m.toDTState(st))
 	}
 }
 
@@ -121,7 +148,7 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 // given auth token
 func (m *libp2pTransferManager) PrepareForDataRequest(ctx context.Context, id uint, authToken string, proposalCid cid.Cid, payloadCid cid.Cid, size uint64) error {
 	err := m.authDB.Put(ctx, authToken, httptransport.AuthValue{
-		ID:          fmt.Sprintf("%s", id),
+		ID:          fmt.Sprintf("%d", id),
 		ProposalCid: proposalCid,
 		PayloadCid:  payloadCid,
 		Size:        size,
@@ -173,7 +200,7 @@ func (m *libp2pTransferManager) subscribe(cb func(uint, ChannelState)) (unsub fu
 	return m.dtServer.Subscribe(func(dbidstr string, st boosttypes.TransferState) {
 		dbid, err := strconv.ParseUint(dbidstr, 10, 64)
 		if err != nil {
-			log.Warnf("cannot parse dbid '%s' in libp2p transfer manager event: %s", dbidstr, err)
+			log.Errorf("cannot parse dbid '%s' in libp2p transfer manager event: %s", dbidstr, err)
 			return
 		}
 		if st.Status == boosttypes.TransferStatusFailed {
@@ -183,8 +210,63 @@ func (m *libp2pTransferManager) subscribe(cb func(uint, ChannelState)) (unsub fu
 			log.Infow("libp2p data transfer error", "dbid", dbid, "remote", st.RemoteAddr, "message", st.Message)
 			return
 		}
+		if st.Status == boosttypes.TransferStatusCompleted {
+			if err := m.saveCompletedTransfer(dbidstr, st); err != nil {
+				log.Errorf("saving completed transfer: %s", err)
+			}
+		}
 		cb(uint(dbid), m.toDTState(st))
 	})
+}
+
+// All returns all active and completed transfers
+func (m *libp2pTransferManager) All() (map[string]ChannelState, error) {
+	// Get all active transfers
+	all := make(map[string]ChannelState)
+	_, err := m.dtServer.Matching(func(xfer *httptransport.Libp2pTransfer) (bool, error) {
+		all[xfer.ID] = m.toDTState(xfer.State())
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Get all persisted (completed) transfers
+	err = m.forEachCompletedTransfer(func(id string, st boosttypes.TransferState) bool {
+		all[id] = m.toDTState(st)
+		return true
+	})
+	return all, err
+}
+
+// byRemoteAddrAndPayloadCid returns the transfer with the matching remote
+// address and payload cid
+func (m *libp2pTransferManager) byRemoteAddrAndPayloadCid(remoteAddr string, payloadCid cid.Cid) (*ChannelState, error) {
+	// Check active transfers
+	matches, err := m.dtServer.Matching(func(xfer *httptransport.Libp2pTransfer) (bool, error) {
+		match := xfer.RemoteAddr == remoteAddr && xfer.PayloadCid == payloadCid
+		return match, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(matches) > 0 {
+		st := m.toDTState(matches[0].State())
+		return &st, nil
+	}
+
+	// Check completed transfers
+	var chanst *ChannelState
+	err = m.forEachCompletedTransfer(func(id string, st boosttypes.TransferState) bool {
+		if st.RemoteAddr == remoteAddr && st.PayloadCid == payloadCid {
+			dtst := m.toDTState(st)
+			chanst = &dtst
+			return true
+		}
+		return false
+	})
+	return chanst, err
 }
 
 func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelState {
@@ -205,5 +287,58 @@ func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelSt
 		Sent:       st.Sent,
 		Received:   st.Received,
 		Message:    st.Message,
+		BaseCid:    st.PayloadCid.String(),
 	}
+}
+
+func (m *libp2pTransferManager) getCompletedTransfer(id string) (*boosttypes.TransferState, error) {
+	data, err := m.dtds.Get(m.ctx, datastore.NewKey(id))
+	if err != nil {
+		return nil, fmt.Errorf("getting transfer status for %s from datastore: %w", id, err)
+	}
+
+	var st boosttypes.TransferState
+	err = json.Unmarshal(data, &st)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling transfer status: %w", err)
+	}
+
+	return &st, nil
+}
+
+func (m *libp2pTransferManager) saveCompletedTransfer(id string, st boosttypes.TransferState) error {
+	data, err := json.Marshal(st)
+	if err != nil {
+		return fmt.Errorf("json marshalling transfer status: %w", err)
+	}
+
+	err = m.dtds.Put(m.ctx, datastore.NewKey(id), data)
+	if err != nil {
+		return fmt.Errorf("storing transfer status to datastore: %w", err)
+	}
+
+	return nil
+}
+
+func (m *libp2pTransferManager) forEachCompletedTransfer(cb func(string, boosttypes.TransferState) bool) error {
+	qres, err := m.dtds.Query(m.ctx, query.Query{})
+	if err != nil {
+		return xerrors.Errorf("query error: %w", err)
+	}
+	defer qres.Close() //nolint:errcheck
+
+	for r := range qres.Next() {
+		var st boosttypes.TransferState
+		err = json.Unmarshal(r.Value, &st)
+		if err != nil {
+			return fmt.Errorf("unmarshaling json from datastore: %w", err)
+		}
+
+		ok := cb(r.Key, st)
+		if !ok {
+			return nil
+		}
+	}
+
+	return nil
 }
