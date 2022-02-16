@@ -63,6 +63,10 @@ var makeDealCmd = &cli.Command{
 	Flags: []cli.Flag{
 		flagMinerRequired,
 		flagVerified,
+		&cli.StringFlag{
+			Name:  "announce",
+			Usage: "the public multi-address from which to download the data (for deals with protocol v120)",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
@@ -143,10 +147,27 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
+		tpr("storage provider supports deal protocol %s", proto)
+
+		isPushTransfer := proto == filclient.DealProtocolv110
+		var announceAddr multiaddr.Multiaddr
+		if !isPushTransfer {
+			tpr("filc host addr: %s", nd.Host.Addrs())
+			tpr("filc host peer: %s", nd.Host.ID())
+			announce := cctx.String("announce")
+			if announce == "" {
+				return fmt.Errorf("must specify announce address to make deals over deal protocol %s", proto)
+			}
+
+			announceAddr, err = multiaddr.NewMultiaddr(announce)
+			if err != nil {
+				return fmt.Errorf("parsing announce address '%s': %w", proto, err)
+			}
+		}
+
 		dbid := uint(rand.Uint32())
 		pullComplete := make(chan error)
 		var lastStatus datatransfer.Status
-		isPushTransfer := proto == filclient.DealProtocolv110
 		if !isPushTransfer {
 			// Subscribe to pull transfer updates.
 			unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
@@ -184,7 +205,7 @@ var makeDealCmd = &cli.Command{
 		case proto == filclient.DealProtocolv110:
 			_, err = fc.SendProposalV110(cctx.Context, *proposal, propnd.Cid())
 		case proto == filclient.DealProtocolv120:
-			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, miner, *proposal, propnd.Cid(), dbid)
+			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, announceAddr, *proposal, propnd.Cid(), dbid)
 		default:
 			err = fmt.Errorf("unrecognized deal protocol %s", proto)
 		}
@@ -244,7 +265,7 @@ var makeDealCmd = &cli.Command{
 	},
 }
 
-func sendProposalV120(ctx context.Context, fc *filclient.FilClient, miner address.Address, netprop network.Proposal, propCid cid.Cid, dbid uint) (func(), bool, error) {
+func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr multiaddr.Multiaddr, netprop network.Proposal, propCid cid.Cid, dbid uint) (func(), bool, error) {
 	// In deal protocol v120 the transfer will be initiated by the
 	// storage provider (a pull transfer) so we need to prepare for
 	// the data request
@@ -256,9 +277,6 @@ func sendProposalV120(ctx context.Context, fc *filclient.FilClient, miner addres
 	}
 
 	// Add an auth token for the data to the auth DB
-	// TODO:
-	// announceAddr = ?
-	var announceAddr multiaddr.Multiaddr
 	rootCid := netprop.Piece.Root
 	size := netprop.Piece.RawBlockSize
 	err = fc.Libp2pTransferMgr.PrepareForDataRequest(ctx, dbid, authToken, propCid, rootCid, size)
@@ -271,7 +289,7 @@ func sendProposalV120(ctx context.Context, fc *filclient.FilClient, miner addres
 	}
 
 	// Send the deal proposal to the storage provider
-	propPhase, err := fc.SendProposalV120(ctx, miner, netprop, announceAddr, authToken)
+	propPhase, err := fc.SendProposalV120(ctx, netprop, announceAddr, authToken)
 	return cleanup, propPhase, err
 }
 

@@ -3,7 +3,6 @@ package filclient
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -126,10 +125,6 @@ type Config struct {
 }
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
-	if len(h.Addrs()) == 0 {
-		return nil, errors.New("host must have at least one announce address")
-	}
-
 	cfg := &Config{
 		Host:       h,
 		Api:        api,
@@ -163,7 +158,6 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		},
 		Lp2pDTConfig: Lp2pDTConfig{
 			Server: httptransport.ServerConfig{
-				AnnounceAddr: h.Addrs()[0],
 				// Keep the cache around for one minute after a request
 				// finishes in case the connection bounced in the middle
 				// of a transfer, or there is a request for the same payload
