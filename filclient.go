@@ -1175,7 +1175,7 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 					log.Info("Deal accepted")
 
 				// Respond with a payment voucher when funds are requested
-				case retrievalmarket.DealStatusFundsNeeded:
+				case retrievalmarket.DealStatusFundsNeeded, retrievalmarket.DealStatusFundsNeededLastPayment:
 					if pchRequired {
 						log.Infof("Sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
 
