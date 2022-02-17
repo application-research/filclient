@@ -598,7 +598,7 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 	return false, nil
 }
 
-func (fc *FilClient) SendProposalV120(ctx context.Context, netprop network.Proposal, announce multiaddr.Multiaddr, authToken string) (bool, error) {
+func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop network.Proposal, announce multiaddr.Multiaddr, authToken string) (bool, error) {
 	ctx, span := Tracer.Start(ctx, "sendProposalV120")
 	defer span.End()
 
@@ -626,9 +626,10 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, netprop network.Propo
 		ClientDealProposal: *netprop.DealProposal,
 		DealDataRoot:       netprop.Piece.Root,
 		Transfer: smtypes.Transfer{
-			Type:   "libp2p",
-			Params: transferParams,
-			Size:   netprop.Piece.RawBlockSize,
+			Type:     "libp2p",
+			ClientID: fmt.Sprintf("%d", dbid),
+			Params:   transferParams,
+			Size:     netprop.Piece.RawBlockSize,
 		},
 	}
 	// TODO: Set a reasonable deadline to receive a response from the server
@@ -811,6 +812,8 @@ type ChannelState struct {
 
 	ChannelID datatransfer.ChannelID `json:"channelId"`
 
+	TransferID string `json:"transferId"`
+
 	// Vouchers returns all vouchers sent on this channel
 	//Vouchers []datatransfer.Voucher
 
@@ -841,6 +844,7 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 		Message:    st.Message(),
 		BaseCid:    st.BaseCID().String(),
 		ChannelID:  st.ChannelID(),
+		TransferID: st.ChannelID().String(),
 		//Vouchers:          st.Vouchers(),
 		//VoucherResults:    st.VoucherResults(),
 		//LastVoucher:       st.LastVoucher(),
@@ -1014,6 +1018,15 @@ func (fc *FilClient) TransferStatus(ctx context.Context, chanid *datatransfer.Ch
 	}
 
 	return ChannelStateConv(st), nil
+}
+
+func (fc *FilClient) TransferStatusByID(ctx context.Context, id string) (*ChannelState, error) {
+	chid := ChannelIDFromString(id)
+	if chid != nil {
+		return fc.TransferStatus(ctx, chid)
+	}
+
+	return fc.Libp2pTransferMgr.byId(id)
 }
 
 var ErrNoTransferFound = fmt.Errorf("no transfer found")

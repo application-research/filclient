@@ -205,6 +205,7 @@ var makeDealCmd = &cli.Command{
 		case proto == filclient.DealProtocolv110:
 			_, err = fc.SendProposalV110(cctx.Context, *proposal, propnd.Cid())
 		case proto == filclient.DealProtocolv120:
+			tpr("sending v1.2.0 deal proposal with dbid %d", dbid)
 			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, announceAddr, *proposal, propnd.Cid(), dbid)
 		default:
 			err = fmt.Errorf("unrecognized deal protocol %s", proto)
@@ -289,7 +290,7 @@ func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr
 	}
 
 	// Send the deal proposal to the storage provider
-	propPhase, err := fc.SendProposalV120(ctx, netprop, announceAddr, authToken)
+	propPhase, err := fc.SendProposalV120(ctx, dbid, netprop, announceAddr, authToken)
 	return cleanup, propPhase, err
 }
 

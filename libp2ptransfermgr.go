@@ -239,6 +239,26 @@ func (m *libp2pTransferManager) All() (map[string]ChannelState, error) {
 	return all, err
 }
 
+func (m *libp2pTransferManager) byId(id string) (*ChannelState, error) {
+	// Check active transfers
+	xfer, err := m.dtServer.Get(id)
+	if err == nil {
+		st := m.toDTState(xfer.State())
+		return &st, nil
+	}
+	if !xerrors.Is(err, httptransport.ErrTransferNotFound) {
+		return nil, err
+	}
+
+	// Check completed transfers
+	boostSt, err := m.getCompletedTransfer(id)
+	if err != nil {
+		return nil, err
+	}
+	st := m.toDTState(*boostSt)
+	return &st, nil
+}
+
 // byRemoteAddrAndPayloadCid returns the transfer with the matching remote
 // address and payload cid
 func (m *libp2pTransferManager) byRemoteAddrAndPayloadCid(remoteAddr string, payloadCid cid.Cid) (*ChannelState, error) {
@@ -288,13 +308,17 @@ func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelSt
 		Received:   st.Received,
 		Message:    st.Message,
 		BaseCid:    st.PayloadCid.String(),
+		TransferID: st.ID,
 	}
 }
 
 func (m *libp2pTransferManager) getCompletedTransfer(id string) (*boosttypes.TransferState, error) {
 	data, err := m.dtds.Get(m.ctx, datastore.NewKey(id))
 	if err != nil {
-		return nil, fmt.Errorf("getting transfer status for %s from datastore: %w", id, err)
+		if xerrors.Is(err, datastore.ErrNotFound) {
+			return nil, fmt.Errorf("getting transfer status for id '%s': not found", id)
+		}
+		return nil, fmt.Errorf("getting transfer status for id '%s' from datastore: %w", id, err)
 	}
 
 	var st boosttypes.TransferState
