@@ -874,7 +874,8 @@ func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[string]*Chann
 		dts[id.String()] = ChannelStateConv(dt)
 	}
 	for id, dt := range v2dts {
-		dts[id] = &dt
+		dtcp := dt
+		dts[id] = &dtcp
 	}
 
 	return dts, nil
@@ -1044,7 +1045,7 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 	// Check if there's a storage deal transfer with the miner that matches the
 	// payload CID
 	// 1. over data transfer v1.2
-	xfer, err := fc.Libp2pTransferMgr.byRemoteAddrAndPayloadCid(string(mpid), content)
+	xfer, err := fc.Libp2pTransferMgr.byRemoteAddrAndPayloadCid(mpid.Pretty(), content)
 	if err != nil {
 		return nil, err
 	}

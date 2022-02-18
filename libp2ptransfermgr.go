@@ -53,6 +53,9 @@ func (m *libp2pTransferManager) Stop() {
 func (m *libp2pTransferManager) Start(ctx context.Context) error {
 	m.ctx, m.cancelCtx = context.WithCancel(ctx)
 
+	// subscribe to notifications from the data transfer server
+	m.unsub = m.subscribe()
+
 	// Every minute, check transfers to see if any have expired
 	m.ticker = time.NewTicker(time.Minute)
 	go func() {
@@ -103,13 +106,6 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 			continue
 		}
 
-		m.listenerLk.Lock()
-		listener := m.listener
-		m.listenerLk.Unlock()
-		if listener == nil {
-			continue
-		}
-
 		// The transfer didn't start, or was canceled or errored out before
 		// completing, so fire a transfer error event
 		dbid, err := strconv.ParseUint(val.ID, 10, 64)
@@ -134,13 +130,16 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 			err = m.saveCompletedTransfer(val.ID, st)
 			if err != nil {
 				log.Errorf("saving completed transfer: %s", err)
-				// TODO unlock
 				continue
 			}
 		}
 
 		// Fire transfer error event
-		listener(uint(dbid), m.toDTState(st))
+		m.listenerLk.Lock()
+		if m.listener != nil {
+			m.listener(uint(dbid), m.toDTState(st))
+		}
+		m.listenerLk.Unlock()
 	}
 }
 
@@ -191,12 +190,18 @@ func (m *libp2pTransferManager) Subscribe(listener func(dbid uint, st ChannelSta
 	}
 
 	m.listener = listener
-	m.unsub = m.subscribe(m.listener)
-	return m.unsub, nil
+
+	unsub := func() {
+		m.listenerLk.Lock()
+		defer m.listenerLk.Unlock()
+
+		m.listener = nil
+	}
+	return unsub, nil
 }
 
 // Convert from libp2p server events to data transfer events
-func (m *libp2pTransferManager) subscribe(cb func(uint, ChannelState)) (unsub func()) {
+func (m *libp2pTransferManager) subscribe() (unsub func()) {
 	return m.dtServer.Subscribe(func(dbidstr string, st boosttypes.TransferState) {
 		dbid, err := strconv.ParseUint(dbidstr, 10, 64)
 		if err != nil {
@@ -215,7 +220,12 @@ func (m *libp2pTransferManager) subscribe(cb func(uint, ChannelState)) (unsub fu
 				log.Errorf("saving completed transfer: %s", err)
 			}
 		}
-		cb(uint(dbid), m.toDTState(st))
+
+		m.listenerLk.Lock()
+		defer m.listenerLk.Unlock()
+		if m.listener != nil {
+			m.listener(uint(dbid), m.toDTState(st))
+		}
 	})
 }
 
@@ -358,11 +368,18 @@ func (m *libp2pTransferManager) forEachCompletedTransfer(cb func(string, boostty
 			return fmt.Errorf("unmarshaling json from datastore: %w", err)
 		}
 
-		ok := cb(r.Key, st)
+		ok := cb(removeLeadingSlash(r.Key), st)
 		if !ok {
 			return nil
 		}
 	}
 
 	return nil
+}
+
+func removeLeadingSlash(key string) string {
+	if key[0] == '/' {
+		return key[1:]
+	}
+	return key
 }
