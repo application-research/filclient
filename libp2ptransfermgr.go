@@ -115,8 +115,10 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 		}
 
 		st := boosttypes.TransferState{
+			ID:        val.ID,
 			LocalAddr: m.dtServer.ID().String(),
 		}
+
 		if activeXfer != nil {
 			st = activeXfer.State()
 		}
@@ -309,15 +311,35 @@ func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelSt
 	case boosttypes.TransferStatusFailed:
 		status = datatransfer.Failed
 	}
+
+	// The datatransfer channel ID is no longer used, but fill in
+	// its fields anyway so that the parts of the UI that depend on it
+	// still work
+	xferid, _ := strconv.ParseUint(st.ID, 10, 64) //nolint:errcheck
+	remoteAddr := st.RemoteAddr
+	if remoteAddr == "" {
+		// If the remote peer never tried to connect to us we don't have
+		// a remote peer ID. However datatransfer.ChannelID requires a
+		// remote peer ID. So just fill it in with the local peer ID so
+		// that it doesn't fail JSON parsing when sent in an RPC.
+		remoteAddr = st.LocalAddr
+	}
+	chid := datatransfer.ChannelID{
+		Initiator: parsePeerID(st.LocalAddr),
+		Responder: parsePeerID(remoteAddr),
+		ID:        datatransfer.TransferID(xferid),
+	}
+
 	return ChannelState{
-		SelfPeer:   peer.ID(st.LocalAddr),
-		RemotePeer: peer.ID(st.RemoteAddr),
+		SelfPeer:   parsePeerID(st.LocalAddr),
+		RemotePeer: parsePeerID(st.RemoteAddr),
 		Status:     status,
 		StatusStr:  datatransfer.Statuses[status],
 		Sent:       st.Sent,
 		Received:   st.Received,
 		Message:    st.Message,
 		BaseCid:    st.PayloadCid.String(),
+		ChannelID:  chid,
 		TransferID: st.ID,
 	}
 }
@@ -382,4 +404,13 @@ func removeLeadingSlash(key string) string {
 		return key[1:]
 	}
 	return key
+}
+
+func parsePeerID(pidstr string) peer.ID {
+	pid, err := peer.Decode(pidstr)
+	if err != nil {
+		log.Warnf("couldnt decode pid '%s': %s", pidstr, err)
+		return ""
+	}
+	return pid
 }
