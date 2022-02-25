@@ -297,13 +297,13 @@ func (fc *FilClient) DataTransferProtocolForMiner(ctx context.Context, miner add
 	}
 
 	// Check if the peer store has supported protocols for the miner's peer
-	proto, err := fc.host.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv110, DealProtocolv120)
+	proto, err := fc.host.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120, DealProtocolv110)
 	if err == nil && proto != "" {
 		return protocol.ID(proto), err
 	}
 
 	// Connect to the miner to get the protocols it supports
-	s, err := fc.streamToMiner(ctx, miner, DealProtocolv110, DealProtocolv120)
+	s, err := fc.streamToMiner(ctx, miner, DealProtocolv120, DealProtocolv110)
 	if err != nil {
 		return "", fmt.Errorf("connecting to miner %s: %w", miner, err)
 	}
@@ -577,7 +577,7 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 
 	// Send proposal to provider using deal protocol v1.1.0 format
 	var resp network.SignedResponse
-	if err := doRpc(ctx, s, netprop, &resp); err != nil {
+	if err := doRpc(ctx, s, &netprop, &resp); err != nil {
 		return false, fmt.Errorf("send proposal rpc: %w", err)
 	}
 
