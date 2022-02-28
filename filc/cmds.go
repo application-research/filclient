@@ -142,7 +142,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		proto, err := fc.DataTransferProtocolForMiner(cctx.Context, miner)
+		proto, err := fc.DealProtocolForMiner(cctx.Context, miner)
 		if err != nil {
 			return err
 		}

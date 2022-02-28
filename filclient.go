@@ -290,7 +290,7 @@ func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 	fc.computePieceComm = pcf
 }
 
-func (fc *FilClient) DataTransferProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
+func (fc *FilClient) DealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
 	addrInfo, err := fc.minerAddrInfo(ctx, miner)
 	if err != nil {
 		return "", err
