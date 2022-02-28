@@ -262,7 +262,11 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	dtServer := httptransport.NewLibp2pCarServer(cfg.Host, authDB, cfg.Blockstore, cfg.Lp2pDTConfig.Server)
 
 	// Create a manager to watch for libp2p data transfer events
-	libp2pTransferMgr := newLibp2pTransferManager(dtServer, lp2pds, authDB, cfg.Lp2pDTConfig.TransferTimeout)
+	lp2pXferOpts := libp2pTransferManagerOpts{
+		xferTimeout:     cfg.Lp2pDTConfig.TransferTimeout,
+		authCheckPeriod: time.Minute,
+	}
+	libp2pTransferMgr := newLibp2pTransferManager(dtServer, lp2pds, authDB, lp2pXferOpts)
 	if err := libp2pTransferMgr.Start(context.TODO()); err != nil {
 		return nil, err
 	}

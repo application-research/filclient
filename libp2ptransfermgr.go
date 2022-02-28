@@ -19,28 +19,43 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// libp2pCarServer is mocked out by the tests
+type libp2pCarServer interface {
+	ID() peer.ID
+	Start(ctx context.Context) error
+	Get(id string) (*httptransport.Libp2pTransfer, error)
+	Subscribe(f httptransport.EventListenerFn) httptransport.UnsubFn
+	CancelTransfer(ctx context.Context, id string) (*boosttypes.TransferState, error)
+	Matching(f httptransport.MatchFn) ([]*httptransport.Libp2pTransfer, error)
+}
+
 // libp2pTransferManager watches events for a libp2p data transfer
 type libp2pTransferManager struct {
-	dtServer    *httptransport.Libp2pCarServer
-	authDB      *httptransport.AuthTokenDB
-	dtds        datastore.Batching
-	xferTimeout time.Duration
-	ctx         context.Context
-	cancelCtx   context.CancelFunc
-	ticker      *time.Ticker
+	dtServer  libp2pCarServer
+	authDB    *httptransport.AuthTokenDB
+	dtds      datastore.Batching
+	opts      libp2pTransferManagerOpts
+	ctx       context.Context
+	cancelCtx context.CancelFunc
+	ticker    *time.Ticker
 
 	listenerLk sync.Mutex
 	listener   func(uint, ChannelState)
 	unsub      func()
 }
 
-func newLibp2pTransferManager(dtServer *httptransport.Libp2pCarServer, ds datastore.Batching, authDB *httptransport.AuthTokenDB, xferTimeout time.Duration) *libp2pTransferManager {
+type libp2pTransferManagerOpts struct {
+	xferTimeout     time.Duration
+	authCheckPeriod time.Duration
+}
+
+func newLibp2pTransferManager(dtServer libp2pCarServer, ds datastore.Batching, authDB *httptransport.AuthTokenDB, opts libp2pTransferManagerOpts) *libp2pTransferManager {
 	ds = namespace.Wrap(ds, datastore.NewKey("/data-transfers"))
 	return &libp2pTransferManager{
-		dtServer:    dtServer,
-		dtds:        ds,
-		authDB:      authDB,
-		xferTimeout: xferTimeout,
+		dtServer: dtServer,
+		dtds:     ds,
+		authDB:   authDB,
+		opts:     opts,
 	}
 }
 
@@ -56,8 +71,8 @@ func (m *libp2pTransferManager) Start(ctx context.Context) error {
 	// subscribe to notifications from the data transfer server
 	m.unsub = m.subscribe()
 
-	// Every minute, check transfers to see if any have expired
-	m.ticker = time.NewTicker(time.Minute)
+	// Every tick, check transfers to see if any have expired
+	m.ticker = time.NewTicker(m.opts.authCheckPeriod)
 	go func() {
 		for range m.ticker.C {
 			m.checkTransferExpiry(ctx)
@@ -69,7 +84,7 @@ func (m *libp2pTransferManager) Start(ctx context.Context) error {
 
 func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 	// Delete expired auth tokens from the auth DB
-	expired, err := m.authDB.DeleteExpired(ctx, time.Now().Add(-m.xferTimeout))
+	expired, err := m.authDB.DeleteExpired(ctx, time.Now().Add(-m.opts.xferTimeout))
 	if err != nil {
 		log.Errorw("deleting expired tokens from auth DB", "err", err)
 		return
@@ -124,7 +139,7 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 		}
 		st.Status = boosttypes.TransferStatusFailed
 		if st.Message == "" {
-			st.Message = fmt.Sprintf("timed out waiting %s for transfer to complete", m.xferTimeout)
+			st.Message = fmt.Sprintf("timed out waiting %s for transfer to complete", m.opts.xferTimeout)
 		}
 
 		if completedXfer == nil {
@@ -348,7 +363,7 @@ func (m *libp2pTransferManager) getCompletedTransfer(id string) (*boosttypes.Tra
 	data, err := m.dtds.Get(m.ctx, datastore.NewKey(id))
 	if err != nil {
 		if xerrors.Is(err, datastore.ErrNotFound) {
-			return nil, fmt.Errorf("getting transfer status for id '%s': not found", id)
+			return nil, fmt.Errorf("getting transfer status for id '%s': %w", id, err)
 		}
 		return nil, fmt.Errorf("getting transfer status for id '%s' from datastore: %w", id, err)
 	}
