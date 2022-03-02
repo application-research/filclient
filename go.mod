@@ -35,7 +35,7 @@ require (
 	github.com/ipld/go-codec-dagpb v1.3.0
 	github.com/ipld/go-ipld-prime v0.14.4
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1
-	github.com/libp2p/go-libp2p v0.18.0-rc2
+	github.com/libp2p/go-libp2p v0.18.0-rc4
 	github.com/libp2p/go-libp2p-core v0.14.0
 	github.com/libp2p/go-libp2p-kad-dht v0.15.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -52,4 +52,4 @@ require (
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
 
-replace github.com/filecoin-project/lotus => github.com/elijaharita/lotus v1.13.2-0.20220120044422-5ea68c3d75a0
+replace github.com/filecoin-project/lotus => github.com/elijaharita/lotus v1.13.3-0.20220218210956-e2a93a3febfe

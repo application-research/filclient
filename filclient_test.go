@@ -214,6 +214,7 @@ func TestStorage(t *testing.T) {
 
 		fmt.Printf("Data transfer finished\n")
 
+		// TODO: bad position for testing retrieval query to peer
 		query, err := fc.RetrievalQueryToPeer(ctx, peer.AddrInfo{ID: miner.Libp2p.PeerID, Addrs: []multiaddr.Multiaddr{miner.ListenAddr}}, obj.Cid())
 		require.NoError(t, err)
 
@@ -297,6 +298,8 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 	if err != nil {
 		t.Fatalf("Could not initialize FilClient: %v", err)
 	}
+
+	time.Sleep(time.Millisecond * 500)
 
 	return client, miner, ensemble, fc, closer
 }
