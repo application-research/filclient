@@ -11,10 +11,8 @@ import (
 	"time"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-jsonrpc"
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	lotusactors "github.com/filecoin-project/lotus/chain/actors"
 	lotustypes "github.com/filecoin-project/lotus/chain/types"
@@ -32,6 +30,7 @@ import (
 	chunk "github.com/ipfs/go-ipfs-chunker"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
@@ -66,48 +65,48 @@ func (reader *DummyDataGen) Read(p []byte) (int, error) {
 	return i, nil
 }
 
-func TestRetrieval(t *testing.T) {
-	app := cli.NewApp()
-	app.Action = func(cctx *cli.Context) error {
-		client, miner, ensemble, fc, closer := initEnsemble(t, cctx)
-		defer closer()
+// func TestRetrieval(t *testing.T) {
+// 	app := cli.NewApp()
+// 	app.Action = func(cctx *cli.Context) error {
+// 		client, miner, ensemble, fc, closer := initEnsemble(t, cctx)
+// 		defer closer()
 
-		// Create dummy deal on miner
-		res, file := client.CreateImportFile(cctx.Context, 1, 256<<20)
-		pieceInfo, err := client.ClientDealPieceCID(cctx.Context, res.Root)
-		require.NoError(t, err)
-		dh := kit.NewDealHarness(t, client, miner, miner)
-		dp := dh.DefaultStartDealParams()
-		dp.DealStartEpoch = abi.ChainEpoch(4 << 10)
-		dp.Data = &storagemarket.DataRef{
-			TransferType: storagemarket.TTManual,
-			Root:         res.Root,
-			PieceCid:     &pieceInfo.PieceCID,
-			PieceSize:    pieceInfo.PieceSize.Unpadded(),
-		}
-		proposalCid := dh.StartDeal(cctx.Context, dp)
-		require.Eventually(t, func() bool {
-			cd, _ := client.ClientGetDealInfo(cctx.Context, *proposalCid)
-			return cd.State == storagemarket.StorageDealCheckForAcceptance
-		}, 30*time.Second, 1*time.Second)
+// 		// Create dummy deal on miner
+// 		res, file := client.CreateImportFile(cctx.Context, 1, 256<<20)
+// 		pieceInfo, err := client.ClientDealPieceCID(cctx.Context, res.Root)
+// 		require.NoError(t, err)
+// 		dh := kit.NewDealHarness(t, client, miner, miner)
+// 		dp := dh.DefaultStartDealParams()
+// 		dp.DealStartEpoch = abi.ChainEpoch(4 << 10)
+// 		dp.Data = &storagemarket.DataRef{
+// 			TransferType: storagemarket.TTManual,
+// 			Root:         res.Root,
+// 			PieceCid:     &pieceInfo.PieceCID,
+// 			PieceSize:    pieceInfo.PieceSize.Unpadded(),
+// 		}
+// 		proposalCid := dh.StartDeal(cctx.Context, dp)
+// 		require.Eventually(t, func() bool {
+// 			cd, _ := client.ClientGetDealInfo(cctx.Context, *proposalCid)
+// 			return cd.State == storagemarket.StorageDealCheckForAcceptance
+// 		}, 30*time.Second, 1*time.Second)
 
-		carFileDir := t.TempDir()
-		carFilePath := filepath.Join(carFileDir, "out.car")
-		require.NoError(t, client.ClientGenCar(cctx.Context, api.FileRef{Path: file}, carFilePath))
-		require.NoError(t, miner.DealsImportData(cctx.Context, *proposalCid, carFilePath))
+// 		carFileDir := t.TempDir()
+// 		carFilePath := filepath.Join(carFileDir, "out.car")
+// 		require.NoError(t, client.ClientGenCar(cctx.Context, api.FileRef{Path: file}, carFilePath))
+// 		require.NoError(t, miner.DealsImportData(cctx.Context, *proposalCid, carFilePath))
 
-		query, err := fc.RetrievalQuery(cctx.Context, miner.ActorAddr, res.Root)
-		err := fc.RetrieveContent(cctx.Context, miner.ActorAddr, &retrievalmarket.DealProposal{
-			PayloadCID: res.Root,
-			ID: query.,
-		})
+// 		query, err := fc.RetrievalQuery(cctx.Context, miner.ActorAddr, res.Root)
+// 		err := fc.RetrieveContent(cctx.Context, miner.ActorAddr, &retrievalmarket.DealProposal{
+// 			PayloadCID: res.Root,
+// 			ID: query.,
+// 		})
 
-		return nil
-	}
-	if err := app.Run([]string{""}); err != nil {
-		t.Fatalf("App failed: %v", err)
-	}
-}
+// 		return nil
+// 	}
+// 	if err := app.Run([]string{""}); err != nil {
+// 		t.Fatalf("App failed: %v", err)
+// 	}
+// }
 
 func TestStorage(t *testing.T) {
 	app := cli.NewApp()
@@ -126,6 +125,10 @@ func TestStorage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Could not build test data DAG: %v", err)
 		}
+
+		version, err := fc.GetMinerVersion(cctx.Context, miner.ActorAddr)
+		require.NoError(t, err)
+		fmt.Printf("Miner Version: %s\n", version)
 
 		addr, err := miner.ActorAddress(ctx)
 		require.NoError(t, err)
@@ -210,6 +213,11 @@ func TestStorage(t *testing.T) {
 		}
 
 		fmt.Printf("Data transfer finished\n")
+
+		query, err := fc.RetrievalQueryToPeer(ctx, peer.AddrInfo{ID: miner.Libp2p.PeerID, Addrs: []multiaddr.Multiaddr{miner.ListenAddr}}, obj.Cid())
+		require.NoError(t, err)
+
+		fmt.Printf("query: %#v\n", query)
 
 		return nil
 	}
