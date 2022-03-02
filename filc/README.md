@@ -27,7 +27,7 @@ wget -c https://golang.org/dl/go1.16.4.linux-amd64.tar.gz -O - | sudo tar -xz -C
 
 **Build and install**
 
-Once all the dependencies are installed, you can build filc
+Once all the dependencies are installed, you can build filc in the `filc` directory:
 
 1. Clone the repository
 ```
@@ -37,9 +37,12 @@ cd filclient
 
 2. Build
 ```
-make all
-cd filc
-go build
+make all filc
+```
+
+3. Run
+```
+./filc/filc help
 ```
 
 ### Lotus Connection
