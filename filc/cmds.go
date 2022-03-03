@@ -9,18 +9,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/filecoin-project/boost/transport/httptransport"
-	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
-	"github.com/multiformats/go-multiaddr"
-
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
+	"github.com/filecoin-project/boost/transport/httptransport"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
@@ -38,6 +37,7 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	textselector "github.com/ipld/go-ipld-selector-text-lite"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/multiformats/go-multiaddr"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -166,6 +166,7 @@ var makeDealCmd = &cli.Command{
 		}
 
 		dbid := uint(rand.Uint32())
+		dealUUID := uuid.New()
 		pullComplete := make(chan error)
 		var lastStatus datatransfer.Status
 		if !isPushTransfer {
@@ -205,8 +206,8 @@ var makeDealCmd = &cli.Command{
 		case proto == filclient.DealProtocolv110:
 			_, err = fc.SendProposalV110(cctx.Context, *proposal, propnd.Cid())
 		case proto == filclient.DealProtocolv120:
-			tpr("sending v1.2.0 deal proposal with dbid %d", dbid)
-			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, announceAddr, *proposal, propnd.Cid(), dbid)
+			tpr("sending v1.2.0 deal proposal with dbid %d, deal uuid %s", dbid, dealUUID.String())
+			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, announceAddr, *proposal, propnd.Cid(), dealUUID, dbid)
 		default:
 			err = fmt.Errorf("unrecognized deal protocol %s", proto)
 		}
@@ -266,7 +267,7 @@ var makeDealCmd = &cli.Command{
 	},
 }
 
-func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr multiaddr.Multiaddr, netprop network.Proposal, propCid cid.Cid, dbid uint) (func(), bool, error) {
+func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr multiaddr.Multiaddr, netprop network.Proposal, propCid cid.Cid, dealUUID uuid.UUID, dbid uint) (func(), bool, error) {
 	// In deal protocol v120 the transfer will be initiated by the
 	// storage provider (a pull transfer) so we need to prepare for
 	// the data request
@@ -290,7 +291,7 @@ func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr
 	}
 
 	// Send the deal proposal to the storage provider
-	propPhase, err := fc.SendProposalV120(ctx, dbid, netprop, announceAddr, authToken)
+	propPhase, err := fc.SendProposalV120(ctx, dbid, netprop, dealUUID, announceAddr, authToken)
 	return cleanup, propPhase, err
 }
 

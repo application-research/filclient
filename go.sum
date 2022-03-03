@@ -294,8 +294,13 @@ github.com/fatih/color v1.9.0/go.mod h1:eQcE1qtQxscV5RaZvpXrrb8Drkc3/DdQ+uUYCNjL
 github.com/fatih/color v1.12.0/go.mod h1:ELkj/draVOlAH/xkhN6mQ50Qd0MPOk5AAr3maGEBuJM=
 github.com/fatih/color v1.13.0 h1:8LOYc1KYPPmyKMuN8QV2DNRWNbLo6LZ0iLs8+mlH53w=
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
+<<<<<<< HEAD
 github.com/filecoin-project/boost v0.0.0-20220217131829-8ed913c2efdc h1:WSWCvPffjqniSvHAostZMg482ldfwzG3v4q6WtxLBa8=
 github.com/filecoin-project/boost v0.0.0-20220217131829-8ed913c2efdc/go.mod h1:VkD/uKSGZm0egfwGq7lAM86GGbJaj2dnqhSnS5I6J4s=
+=======
+github.com/filecoin-project/boost v0.0.0-20220302163315-f1e558ab8801 h1:vceepCQrcev4BNtFRZaG1cS2BKtZdsjSdvSt+Hh4TcA=
+github.com/filecoin-project/boost v0.0.0-20220302163315-f1e558ab8801/go.mod h1:JxeLUKQJJi+qZYAd/qXiD1DHauWfsMFyMZG/oTVhX8k=
+>>>>>>> feat: support deal status protocol v1.2.0
 github.com/filecoin-project/dagstore v0.4.3-0.20211211192320-72b849e131d2/go.mod h1:tlV8C11UljvFq3WWlMh2oMViEaVaPb6uT8eL/YQgDfk=
 github.com/filecoin-project/dagstore v0.4.4/go.mod h1:7BlOvaTJrFJ1Qemt5jHlLJ4VhDIuSIzGS0IwO/0AXPA=
 github.com/filecoin-project/dagstore v0.5.2 h1:Nd6oXdnolbbVhpMpkYT5PJHOjQp4OBSntHpMV5pxj3c=
@@ -377,11 +382,16 @@ github.com/filecoin-project/go-statestore v0.2.0 h1:cRRO0aPLrxKQCZ2UOQbzFGn4WDNd
 github.com/filecoin-project/go-statestore v0.2.0/go.mod h1:8sjBYbS35HwPzct7iT4lIXjLlYyPor80aU7t7a/Kspo=
 github.com/filecoin-project/go-storedcounter v0.1.0 h1:Mui6wSUBC+cQGHbDUBcO7rfh5zQkWJM/CpAZa/uOuus=
 github.com/filecoin-project/go-storedcounter v0.1.0/go.mod h1:4ceukaXi4vFURIoxYMfKzaRF5Xv/Pinh2oTnoxpv+z8=
+<<<<<<< HEAD
 github.com/filecoin-project/index-provider v0.5.0 h1:k2C1RFvOvxmA2i8bhmkb3b4qun7RDRDzzs/y25/TwQg=
 github.com/filecoin-project/index-provider v0.5.0/go.mod h1:KHVrP2vU3YuScb+fawObwTFoR882up9U07kk0ZrfP0c=
 github.com/filecoin-project/lotus v1.14.0-rc6.0.20220214114358-4df3c89b7282/go.mod h1:azUOK7wK37MP3OJ/n9saAE8RygO0pE965kulG2wwTc4=
 github.com/filecoin-project/lotus v1.15.1-rc5 h1:1phU8B5abrjcd/4CzN5/wivvapnjZAesc/RbB6rjbKk=
 github.com/filecoin-project/lotus v1.15.1-rc5/go.mod h1:S/8iC5pQwAM9PEG92anrRSPxKNFJvHtvXUVCZPxJEMY=
+=======
+github.com/filecoin-project/lotus v1.14.0-rc6.0.20220223145324-b7081dc4f67c h1:uCjx3WXOnzKoHe6SBNMFeWdPW+orLcJQFbyZShQq7IQ=
+github.com/filecoin-project/lotus v1.14.0-rc6.0.20220223145324-b7081dc4f67c/go.mod h1:azUOK7wK37MP3OJ/n9saAE8RygO0pE965kulG2wwTc4=
+>>>>>>> feat: support deal status protocol v1.2.0
 github.com/filecoin-project/specs-actors v0.9.13/go.mod h1:TS1AW/7LbG+615j4NsjMK1qlpAwaFsG9w0V2tg2gSao=
 github.com/filecoin-project/specs-actors v0.9.14 h1:68PVstg2UB3ZsMLF+DKFTAs/YKsqhKWynkr0IqmVRQY=
 github.com/filecoin-project/specs-actors v0.9.14/go.mod h1:TS1AW/7LbG+615j4NsjMK1qlpAwaFsG9w0V2tg2gSao=
@@ -401,9 +411,12 @@ github.com/filecoin-project/specs-actors/v6 v6.0.1 h1:laxvHNsvrq83Y9n+W7znVCePi3
 github.com/filecoin-project/specs-actors/v6 v6.0.1/go.mod h1:V1AYfi5GkHXipx1mnVivoICZh3wtwPxDVuds+fbfQtk=
 github.com/filecoin-project/specs-actors/v7 v7.0.0-20211222192039-c83bea50c402/go.mod h1:p6LIOFezA1rgRLMewbvdi3Pp6SAu+q9FtJ9CAleSjrE=
 github.com/filecoin-project/specs-actors/v7 v7.0.0-rc1/go.mod h1:TA5FwCna+Yi36POaT7SLKXsgEDvJwc0V/L6ZsO19B9M=
+<<<<<<< HEAD
 github.com/filecoin-project/specs-actors/v7 v7.0.0-rc1.0.20220118005651-2470cb39827e/go.mod h1:TA5FwCna+Yi36POaT7SLKXsgEDvJwc0V/L6ZsO19B9M=
 github.com/filecoin-project/specs-actors/v7 v7.0.0 h1:FQN7tjt3o68hfb3qLFSJBoLMuOFY0REkFVLO/zXj8RU=
 github.com/filecoin-project/specs-actors/v7 v7.0.0/go.mod h1:TA5FwCna+Yi36POaT7SLKXsgEDvJwc0V/L6ZsO19B9M=
+=======
+>>>>>>> feat: support deal status protocol v1.2.0
 github.com/filecoin-project/specs-storage v0.2.0 h1:Y4UDv0apRQ3zI2GiPPubi8JblpUZZphEdaJUxCutfyg=
 github.com/filecoin-project/specs-storage v0.2.0/go.mod h1:Tb88Zq+IBJbvAn3mS89GYj3jdRThBTE/771HCVZdRJU=
 github.com/filecoin-project/storetheindex v0.3.5 h1:KoS9TvjPm6zIZfUH8atAHJbVHOO7GTP1MdTG+v0eE+Q=

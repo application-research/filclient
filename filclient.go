@@ -12,6 +12,7 @@ import (
 
 	boostcar "github.com/filecoin-project/boost/car"
 	smtypes "github.com/filecoin-project/boost/storagemarket/types"
+	"github.com/filecoin-project/boost/storagemarket/types/dealcheckpoints"
 	"github.com/filecoin-project/boost/transport/httptransport"
 	boosttypes "github.com/filecoin-project/boost/transport/types"
 	"github.com/filecoin-project/go-address"
@@ -69,7 +70,8 @@ var log = logging.Logger("filclient")
 const DealProtocolv110 = "/fil/storage/mk/1.1.0"
 const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 const QueryAskProtocol = "/fil/storage/ask/1.1.0"
-const DealStatusProtocol = "/fil/storage/status/1.1.0"
+const DealStatusProtocolv110 = "/fil/storage/status/1.1.0"
+const DealStatusProtocolv120 = "/fil/storage/status/1.2.0"
 const RetrievalQueryProtocol = "/fil/retrieval/qry/1.0.0"
 
 const maxTraversalLinks = 32 * (1 << 20)
@@ -602,7 +604,7 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 	return false, nil
 }
 
-func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop network.Proposal, announce multiaddr.Multiaddr, authToken string) (bool, error) {
+func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop network.Proposal, dealUUID uuid.UUID, announce multiaddr.Multiaddr, authToken string) (bool, error) {
 	ctx, span := Tracer.Start(ctx, "sendProposalV120")
 	defer span.End()
 
@@ -613,7 +615,7 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop ne
 
 	defer s.Close()
 
-	// Send proposal to provider using deal protocol v1.2.0 format
+	// Add the data URL and authorization token to the transfer parameters
 	transferParams, err := json.Marshal(boosttypes.HttpRequest{
 		URL: "libp2p://" + announce.String(),
 		Headers: map[string]string{
@@ -626,7 +628,7 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop ne
 
 	// Send proposal to storage provider using deal protocol v1.2.0 format
 	params := smtypes.DealParams{
-		DealUUID:           uuid.New(),
+		DealUUID:           dealUUID,
 		ClientDealProposal: *netprop.DealProposal,
 		DealDataRoot:       netprop.Piece.Root,
 		Transfer: smtypes.Transfer{
@@ -723,36 +725,111 @@ func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi
 	return commcid.DataCommitmentV1ToCID(rawPaddedCommp)
 }
 
-func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {
-	cidb, err := cborutil.Dump(propCid)
-	if err != nil {
-		return nil, err
+func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, error) {
+	protos := []protocol.ID{DealStatusProtocolv110}
+	if dealUUID != nil {
+		// Deal status protocol v1.2.0 requires a deal uuid, so only include it
+		// if the deal uuid is not nil
+		protos = []protocol.ID{DealStatusProtocolv120, DealStatusProtocolv110}
 	}
-
-	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, cidb, api.MsgMeta{Type: api.MTUnknown})
-	if err != nil {
-		return nil, fmt.Errorf("signing status request failed: %w", err)
-	}
-
-	req := &network.DealStatusRequest{
-		Proposal:  propCid,
-		Signature: *sig,
-	}
-
-	s, err := fc.streamToMiner(ctx, miner, DealStatusProtocol)
+	s, err := fc.streamToMiner(ctx, miner, protos...)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
 
-	var resp network.DealStatusResponse
+	// If the miner only supports deal status protocol v1.1.0,
+	// or we don't have a uuid for the deal
+	if s.Protocol() == DealStatusProtocolv110 {
+		// Query deal status by signed proposal cid
+		cidb, err := cborutil.Dump(propCid)
+		if err != nil {
+			return nil, err
+		}
+
+		sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, cidb, api.MsgMeta{Type: api.MTUnknown})
+		if err != nil {
+			return nil, fmt.Errorf("signing status request failed: %w", err)
+		}
+
+		req := &network.DealStatusRequest{
+			Proposal:  propCid,
+			Signature: *sig,
+		}
+
+		var resp network.DealStatusResponse
+		if err := doRpc(ctx, s, req, &resp); err != nil {
+			return nil, fmt.Errorf("deal status rpc: %w", err)
+		}
+
+		return &resp.DealState, nil
+	}
+
+	// The miner supports deal status protocol v1.2.0 or above.
+	// Query deal status by deal UUID.
+	uuidBytes, err := dealUUID.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("getting uuid bytes: %w", err)
+	}
+	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, uuidBytes, api.MsgMeta{Type: api.MTUnknown})
+	if err != nil {
+		return nil, fmt.Errorf("signing status request failed: %w", err)
+	}
+
+	req := &smtypes.DealStatusRequest{
+		DealUUID:  *dealUUID,
+		Signature: *sig,
+	}
+
+	var resp smtypes.DealStatusResponse
 	if err := doRpc(ctx, s, req, &resp); err != nil {
 		return nil, fmt.Errorf("deal status rpc: %w", err)
 	}
 
-	// TODO: check the signatures and stuff?
+	if resp.Error != "" {
+		return nil, fmt.Errorf("deal status error: %s", resp.Error)
+	}
 
-	return &resp.DealState, nil
+	st := resp.DealStatus
+	if st == nil {
+		return nil, fmt.Errorf("deal status is nil")
+	}
+
+	return &storagemarket.ProviderDealState{
+		State:         toLegacyDealStatus(st),
+		Message:       st.Error,
+		Proposal:      &st.Proposal,
+		ProposalCid:   &st.SignedProposalCid,
+		PublishCid:    st.PublishCid,
+		DealID:        st.ChainDealID,
+		FastRetrieval: true,
+	}, nil
+}
+
+// toLegacyDealStatus converts a v1.2.0 deal status to a legacy deal status
+func toLegacyDealStatus(ds *smtypes.DealStatus) storagemarket.StorageDealStatus {
+	if ds.Error != "" {
+		return storagemarket.StorageDealError
+	}
+
+	switch ds.Status {
+	case dealcheckpoints.Accepted.String():
+		return storagemarket.StorageDealWaitingForData
+	case dealcheckpoints.Transferred.String():
+		return storagemarket.StorageDealVerifyData
+	case dealcheckpoints.Published.String():
+		return storagemarket.StorageDealPublishing
+	case dealcheckpoints.PublishConfirmed.String():
+		return storagemarket.StorageDealStaged
+	case dealcheckpoints.AddedPiece.String():
+		return storagemarket.StorageDealAwaitingPreCommit
+	case dealcheckpoints.IndexedAndAnnounced.String():
+		return storagemarket.StorageDealAwaitingPreCommit
+	case dealcheckpoints.Complete.String():
+		return storagemarket.StorageDealSealing
+	}
+
+	return storagemarket.StorageDealUnknown
 }
 
 func (fc *FilClient) MinerPeer(ctx context.Context, miner address.Address) (peer.AddrInfo, error) {
