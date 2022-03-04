@@ -1364,6 +1364,7 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 		if err != nil {
 			return nil, fmt.Errorf("data transfer failed: %w", err)
 		}
+		log.Debugf("data transfer for retrieval complete")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
