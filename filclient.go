@@ -301,6 +301,34 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 	return *minfo.PeerId, nil
 }
 
+func (fc *FilClient) openStreamToPeer(ctx context.Context, addr peer.AddrInfo, protocol protocol.ID) (inet.Stream, error) {
+	ctx, span := Tracer.Start(ctx, "openStreamToPeer", trace.WithAttributes(
+		attribute.Stringer("peerID", addr.ID),
+	))
+	defer span.End()
+
+	err := fc.connectToPeer(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := fc.host.NewStream(ctx, addr.ID, protocol)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open stream to peer: %w", err)
+	}
+
+	return s, nil
+}
+
+// Errors - ErrMinerConnectionFailed, ErrLotusError
+func (fc *FilClient) connectToPeer(ctx context.Context, addr peer.AddrInfo) error {
+	if err := fc.host.Connect(ctx, addr); err != nil {
+		return NewErrMinerConnectionFailed(err)
+	}
+
+	return nil
+}
+
 func (fc *FilClient) GetMinerVersion(ctx context.Context, maddr address.Address) (string, error) {
 	pid, err := fc.connectToMiner(ctx, maddr)
 	if err != nil {
@@ -578,16 +606,29 @@ func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, prop
 	return &resp.DealState, nil
 }
 
-func (fc *FilClient) minerPeer(ctx context.Context, miner address.Address) (peer.ID, error) {
+func (fc *FilClient) MinerPeer(ctx context.Context, miner address.Address) (peer.AddrInfo, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, miner, types.EmptyTSK)
 	if err != nil {
-		return "", err
-	}
-	if minfo.PeerId == nil {
-		return "", fmt.Errorf("miner has no peer id")
+		return peer.AddrInfo{}, err
 	}
 
-	return *minfo.PeerId, nil
+	if minfo.PeerId == nil {
+		return peer.AddrInfo{}, fmt.Errorf("miner %s has no peer ID set", miner)
+	}
+
+	var maddrs []multiaddr.Multiaddr
+	for _, mma := range minfo.Multiaddrs {
+		ma, err := multiaddr.NewMultiaddrBytes(mma)
+		if err != nil {
+			return peer.AddrInfo{}, fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", miner, err)
+		}
+		maddrs = append(maddrs, ma)
+	}
+
+	return peer.AddrInfo{
+		ID:    *minfo.PeerId,
+		Addrs: maddrs,
+	}, nil
 }
 
 func (fc *FilClient) minerOwner(ctx context.Context, miner address.Address) (address.Address, error) {
@@ -698,14 +739,14 @@ func (fc *FilClient) MinerTransferDiagnostics(ctx context.Context, miner address
 	defer func() {
 		log.Infof("get miner diagnostics took: %s", time.Since(start))
 	}()
-	mpid, err := fc.minerPeer(ctx, miner)
+	mpid, err := fc.MinerPeer(ctx, miner)
 	if err != nil {
 		return nil, err
 	}
 	// gather information about active transport channels
-	transportChannels := fc.transport.ChannelsForPeer(mpid)
+	transportChannels := fc.transport.ChannelsForPeer(mpid.ID)
 	// gather information about graphsync state for peer
-	gsPeerState := fc.graphSync.PeerState(mpid)
+	gsPeerState := fc.graphSync.PeerState(mpid.ID)
 
 	sendingTransfers := fc.generateTransfers(ctx, transportChannels.SendingChannels, gsPeerState.IncomingState)
 	receivingTransfers := fc.generateTransfers(ctx, transportChannels.ReceivingChannels, gsPeerState.OutgoingState)
@@ -816,7 +857,7 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 	defer func() {
 		log.Infof("check transfer status took: %s", time.Since(start))
 	}()
-	mpid, err := fc.minerPeer(ctx, miner)
+	mpid, err := fc.MinerPeer(ctx, miner)
 	if err != nil {
 		return nil, err
 	}
@@ -827,7 +868,7 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 	}
 
 	for chanid, state := range inprog {
-		if chanid.Responder == mpid {
+		if chanid.Responder == mpid.ID {
 			if state.IsPull() {
 				// this isnt a storage deal transfer...
 				continue
@@ -1010,6 +1051,30 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	return &resp, nil
 }
 
+func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.AddrInfo, pcid cid.Cid) (*retrievalmarket.QueryResponse, error) {
+	ctx, span := Tracer.Start(ctx, "retrievalQueryPeer", trace.WithAttributes(
+		attribute.Stringer("peerID", minerPeer.ID),
+	))
+	defer span.End()
+
+	s, err := fc.openStreamToPeer(ctx, minerPeer, RetrievalQueryProtocol)
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+
+	q := &retrievalmarket.Query{
+		PayloadCID: pcid,
+	}
+
+	var resp retrievalmarket.QueryResponse
+	if err := doRpc(ctx, s, q, &resp); err != nil {
+		return nil, fmt.Errorf("retrieval query rpc: %w", err)
+	}
+
+	return &resp, nil
+}
+
 func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Address) (address.Address, error) {
 
 	avail, err := fc.pchmgr.AvailableFundsByFromTo(ctx, fc.ClientAddr, dest)
@@ -1065,6 +1130,7 @@ func (fc *FilClient) RetrieveContent(
 	miner address.Address,
 	proposal *retrievalmarket.DealProposal,
 ) (*RetrievalStats, error) {
+
 	return fc.RetrieveContentWithProgressCallback(ctx, miner, proposal, nil)
 }
 
@@ -1075,11 +1141,32 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 	progressCallback func(bytesReceived uint64),
 ) (*RetrievalStats, error) {
 
+	log.Infof("Starting retrieval with miner: %s", miner)
+
+	minerPeer, err := fc.MinerPeer(ctx, miner)
+	if err != nil {
+		return nil, err
+	}
+	minerOwner, err := fc.minerOwner(ctx, miner)
+	if err != nil {
+		return nil, err
+	}
+	return fc.RetrieveContextFromPeerWithProgressCallback(ctx, minerPeer.ID, minerOwner, proposal, progressCallback)
+}
+
+func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
+	ctx context.Context,
+	peerID peer.ID,
+	minerWallet address.Address,
+	proposal *retrievalmarket.DealProposal,
+	progressCallback func(bytesReceived uint64),
+) (*RetrievalStats, error) {
+
 	if progressCallback == nil {
 		progressCallback = func(bytesReceived uint64) {}
 	}
 
-	log.Infof("Starting retrieval with miner: %s", miner)
+	log.Infof("Starting retrieval with miner peer ID: %s", peerID)
 
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
 	defer span.End()
@@ -1088,22 +1175,12 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 	startTime := time.Now()
 	totalPayment := abi.NewTokenAmount(0)
 
-	mpID, err := fc.minerPeer(ctx, miner)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get miner peer: %w", err)
-	}
-
-	minerOwner, err := fc.minerOwner(ctx, miner)
-	if err != nil {
-		return nil, err
-	}
-
 	pchRequired := !proposal.PricePerByte.IsZero() || !proposal.UnsealPrice.IsZero()
 	var pchAddr address.Address
 	var pchLane uint64
 	if pchRequired {
 		// Get the payment channel and create a lane for this retrieval
-		pchAddr, err = fc.getPaychWithMinFunds(ctx, minerOwner)
+		pchAddr, err := fc.getPaychWithMinFunds(ctx, minerWallet)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get payment channel: %w", err)
 		}
@@ -1252,17 +1329,17 @@ func (fc *FilClient) RetrieveContentWithProgressCallback(
 		blocksIndex := state.ReceivedCidsTotal()
 		totalReceived := state.Received()
 		if eventCodeNotHandled {
-			log.Warnw("unhandled retrieval event", "dealID", dealID, "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg, "blocksIndex", blocksIndex, "totalReceived", totalReceived)
+			log.Warnw("unhandled retrieval event", "dealID", dealID, "rootCid", rootCid, "peerID", peerID, "name", name, "code", code, "message", msg, "blocksIndex", blocksIndex, "totalReceived", totalReceived)
 		} else {
 			if !silenceEventCode || fc.logRetrievalProgressEvents {
-				log.Debugw("retrieval event", "dealID", dealID, "rootCid", rootCid, "miner", miner, "name", name, "code", code, "message", msg, "blocksIndex", blocksIndex, "totalReceived", totalReceived)
+				log.Debugw("retrieval event", "dealID", dealID, "rootCid", rootCid, "peerID", peerID, "name", name, "code", code, "message", msg, "blocksIndex", blocksIndex, "totalReceived", totalReceived)
 			}
 		}
 	})
 	defer unsubscribe()
 
 	// Submit the retrieval deal proposal to the miner
-	newchid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
+	newchid, err := fc.dataTransfer.OpenPullDataChannel(ctx, peerID, proposal, proposal.PayloadCID, shared.AllSelector())
 	if err != nil {
 		return nil, err
 	}
