@@ -301,18 +301,18 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 	return *minfo.PeerId, nil
 }
 
-func (fc *FilClient) streamToPeer(ctx context.Context, addr peer.AddrInfo, protocol protocol.ID) (inet.Stream, error) {
-	ctx, span := Tracer.Start(ctx, "streamToPeer", trace.WithAttributes(
+func (fc *FilClient) openStreamToPeer(ctx context.Context, addr peer.AddrInfo, protocol protocol.ID) (inet.Stream, error) {
+	ctx, span := Tracer.Start(ctx, "openStreamToPeer", trace.WithAttributes(
 		attribute.Stringer("peerID", addr.ID),
 	))
 	defer span.End()
 
-	mpid, err := fc.connectToPeer(ctx, addr)
+	err := fc.connectToPeer(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	s, err := fc.host.NewStream(ctx, mpid, protocol)
+	s, err := fc.host.NewStream(ctx, addr.ID, protocol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open stream to peer: %w", err)
 	}
@@ -321,12 +321,12 @@ func (fc *FilClient) streamToPeer(ctx context.Context, addr peer.AddrInfo, proto
 }
 
 // Errors - ErrMinerConnectionFailed, ErrLotusError
-func (fc *FilClient) connectToPeer(ctx context.Context, addr peer.AddrInfo) (peer.ID, error) {
+func (fc *FilClient) connectToPeer(ctx context.Context, addr peer.AddrInfo) error {
 	if err := fc.host.Connect(ctx, addr); err != nil {
-		return "", NewErrMinerConnectionFailed(err)
+		return NewErrMinerConnectionFailed(err)
 	}
 
-	return addr.ID, nil
+	return nil
 }
 
 func (fc *FilClient) GetMinerVersion(ctx context.Context, maddr address.Address) (string, error) {
@@ -1057,7 +1057,7 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	))
 	defer span.End()
 
-	s, err := fc.streamToPeer(ctx, minerPeer, RetrievalQueryProtocol)
+	s, err := fc.openStreamToPeer(ctx, minerPeer, RetrievalQueryProtocol)
 	if err != nil {
 		return nil, err
 	}
