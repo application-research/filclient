@@ -324,7 +324,7 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 	))
 	defer span.End()
 
-	mpid, err := fc.connectToMiner(ctx, maddr)
+	mpid, err := fc.ConnectToMiner(ctx, maddr)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +338,7 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 }
 
 // Errors - ErrMinerConnectionFailed, ErrLotusError
-func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
+func (fc *FilClient) ConnectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
 	addrInfo, err := fc.minerAddrInfo(ctx, maddr)
 	if err != nil {
 		return "", err
@@ -418,7 +418,7 @@ func (fc *FilClient) connectToPeer(ctx context.Context, addr peer.AddrInfo) erro
 }
 
 func (fc *FilClient) GetMinerVersion(ctx context.Context, maddr address.Address) (string, error) {
-	pid, err := fc.connectToMiner(ctx, maddr)
+	pid, err := fc.ConnectToMiner(ctx, maddr)
 	if err != nil {
 		return "", err
 	}
@@ -1163,7 +1163,7 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 	ctx, span := Tracer.Start(ctx, "startDataTransfer")
 	defer span.End()
 
-	mpid, err := fc.connectToMiner(ctx, miner)
+	mpid, err := fc.ConnectToMiner(ctx, miner)
 	if err != nil {
 		return nil, err
 	}
@@ -1286,7 +1286,7 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 	// make sure we at least have an open connection to the miner
 	if fc.host.Network().Connectedness(st.RemotePeer) != inet.Connected {
 		// try reconnecting
-		mpid, err := fc.connectToMiner(ctx, miner)
+		mpid, err := fc.ConnectToMiner(ctx, miner)
 		if err != nil {
 			return err
 		}

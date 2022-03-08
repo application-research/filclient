@@ -36,6 +36,9 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	textselector "github.com/ipld/go-ipld-selector-text-lite"
+	"github.com/libp2p/go-libp2p-core/host"
+	inet "github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 	cli "github.com/urfave/cli/v2"
@@ -159,10 +162,12 @@ var makeDealCmd = &cli.Command{
 				return fmt.Errorf("must specify announce address to make deals over deal protocol %s", proto)
 			}
 
-			announceAddr, err = multiaddr.NewMultiaddr(announce)
+			announceStr := announce + "/p2p/" + nd.Host.ID().String()
+			announceAddr, err = multiaddr.NewMultiaddr(announceStr)
 			if err != nil {
 				return fmt.Errorf("parsing announce address '%s': %w", proto, err)
 			}
+			tpr("filc announce address: %s", announceAddr.String())
 		}
 
 		dbid := uint(rand.Uint32())
@@ -198,6 +203,11 @@ var makeDealCmd = &cli.Command{
 				return err
 			}
 			defer unsubPullEvts()
+
+			// Keep the connection alive
+			ctx, cancel := context.WithCancel(cctx.Context)
+			defer cancel()
+			go keepConnection(ctx, fc, nd.Host, miner, tpr)
 		}
 
 		// Send the deal proposal
@@ -323,6 +333,71 @@ func logStatus(status *filclient.ChannelState, changed bool) (string, error) {
 	}
 	return "", nil
 }
+
+// keepConnection watches the connection to the miner, reconnecting if it goes
+// down
+func keepConnection(ctx context.Context, fc *filclient.FilClient, host host.Host, maddr address.Address, tpr func(s string, args ...interface{})) {
+	pid, err := fc.ConnectToMiner(ctx, maddr)
+	if err != nil {
+		tpr("Unable to make initial connection to storage provider %s: %s", maddr, err)
+		return
+	}
+
+	tpr("Watching connection to storage provider %s with peer ID %s", maddr, pid)
+	cw := connWatcher{
+		pid:          pid,
+		disconnected: make(chan struct{}, 1),
+		reconnect: func() {
+			tpr("Connection to storage provider %s disconnected. Reconnecting...", maddr)
+			_, err := fc.ConnectToMiner(ctx, maddr)
+			if err == nil {
+				tpr("Reconnected to storage provider %s. Waiting for storage provider to restart transfer...", maddr)
+			} else {
+				tpr("Failed to reconnect to storage provider %s: %s", maddr, err)
+			}
+		},
+	}
+	host.Network().Notify(&cw)
+}
+
+type connWatcher struct {
+	pid          peer.ID
+	reconnect    func()
+	disconnected chan struct{}
+}
+
+// Disconnected is called when a connection breaks
+func (c *connWatcher) Disconnected(n inet.Network, conn inet.Conn) {
+	if conn.RemotePeer() != c.pid {
+		return
+	}
+
+	select {
+	case c.disconnected <- struct{}{}:
+		go c.processDisconnect()
+	default:
+	}
+}
+
+func (c *connWatcher) processDisconnect() {
+	// Sleep for a few seconds to prevent flapping
+	time.Sleep(5 * time.Second)
+
+	select {
+	case <-c.disconnected:
+		c.reconnect()
+		// Do one more reconnect in case a disconnect happened while we were
+		// reconnecting,
+		go c.processDisconnect()
+	default:
+	}
+}
+
+func (c *connWatcher) Listen(n inet.Network, m multiaddr.Multiaddr)      {}
+func (c *connWatcher) ListenClose(n inet.Network, m multiaddr.Multiaddr) {}
+func (c *connWatcher) Connected(n inet.Network, conn inet.Conn)          {}
+func (c *connWatcher) OpenedStream(n inet.Network, stream inet.Stream)   {}
+func (c *connWatcher) ClosedStream(n inet.Network, stream inet.Stream)   {}
 
 var infoCmd = &cli.Command{
 	Name:      "info",
