@@ -1126,7 +1126,7 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 	// Check if there's a storage deal transfer with the miner that matches the
 	// payload CID
 	// 1. over data transfer v1.2
-	xfer, err := fc.Libp2pTransferMgr.byRemoteAddrAndPayloadCid(mpid.Pretty(), content)
+	xfer, err := fc.Libp2pTransferMgr.byRemoteAddrAndPayloadCid(mpid.ID.Pretty(), content)
 	if err != nil {
 		return nil, err
 	}
@@ -1365,10 +1365,13 @@ func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Addr
 		return *avail.Channel, nil
 	}
 
-	amount := abi.TokenAmount(types.BigMul(types.BigInt(reqBalance), types.NewInt(2)))
+	amount := types.BigMul(types.BigInt(reqBalance), types.NewInt(2))
 
 	fmt.Println("getting payment channel: ", fc.ClientAddr, dest, amount)
-	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount, paychmgr.GetOpts{})
+	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount, paychmgr.GetOpts{
+		Reserve:  false,
+		OffChain: false,
+	})
 	if err != nil {
 		return address.Undef, fmt.Errorf("failed to get payment channel: %w", err)
 	}
