@@ -807,7 +807,7 @@ func (tc *transferConverter) convertTransfer(channelID *datatransfer.ChannelID, 
 		stateString = "no graphsync state found"
 	}
 	if channelID == nil {
-		diagnostics = append(diagnostics, fmt.Sprintf("No data transfer channel id for GraphSync request ID %d", requestID))
+		diagnostics = append(diagnostics, fmt.Sprintf("No data transfer channel id for GraphSync request ID %s", requestID))
 	} else if !hasState {
 		diagnostics = append(diagnostics, fmt.Sprintf("No current request state for data transfer channel id %s", channelID))
 	}
