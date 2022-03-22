@@ -636,7 +636,7 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop ne
 			Size:     netprop.Piece.RawBlockSize,
 		},
 	}
-	// TODO: Set a reasonable deadline to receive a response from the server
+
 	var resp smtypes.DealResponse
 	if err := doRpc(ctx, s, &params, &resp); err != nil {
 		return false, fmt.Errorf("send proposal rpc: %w", err)
