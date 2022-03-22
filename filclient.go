@@ -1103,11 +1103,13 @@ func (fc *FilClient) TransferStatus(ctx context.Context, chanid *datatransfer.Ch
 }
 
 func (fc *FilClient) TransferStatusByID(ctx context.Context, id string) (*ChannelState, error) {
-	chid := ChannelIDFromString(id)
-	if chid != nil {
+	chid, err := ChannelIDFromString(id)
+	if err == nil {
+		// If the id is a data transfer channel id, get the transfer status by channel id
 		return fc.TransferStatus(ctx, chid)
 	}
 
+	// Get the transfer status by transfer id
 	return fc.Libp2pTransferMgr.byId(id)
 }
 
