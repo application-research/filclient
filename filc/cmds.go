@@ -116,9 +116,10 @@ var makeDealCmd = &cli.Command{
 
 		tpr("File CID: %s", obj.Cid())
 
+		tpr("getting ask from storage provider %s...", miner)
 		ask, err := fc.GetAsk(cctx.Context, miner)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting ask from storage provider %s: %w", miner, err)
 		}
 
 		verified := parseVerified(cctx)
@@ -126,6 +127,9 @@ var makeDealCmd = &cli.Command{
 		price := ask.Ask.Ask.Price
 		if verified {
 			price = ask.Ask.Ask.VerifiedPrice
+			tpr("storage provider ask for verified deals: %d", price)
+		} else {
+			tpr("storage provider ask: %d", price)
 		}
 
 		minPieceSize := ask.Ask.Ask.MinPieceSize

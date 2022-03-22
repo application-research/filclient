@@ -297,25 +297,23 @@ func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 }
 
 func (fc *FilClient) DealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
-	addrInfo, err := fc.minerAddrInfo(ctx, miner)
+	// Connect to the miner. If there's not already a connection to the miner,
+	// libp2p will open a connection and exchange protocol IDs.
+	mpid, err := fc.ConnectToMiner(ctx, miner)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("connecting to %s: %w", miner, err)
 	}
 
-	// Check if the peer store has supported protocols for the miner's peer
-	proto, err := fc.host.Peerstore().FirstSupportedProtocol(addrInfo.ID, DealProtocolv120, DealProtocolv110)
-	if err == nil && proto != "" {
-		return protocol.ID(proto), err
-	}
-
-	// Connect to the miner to get the protocols it supports
-	s, err := fc.streamToMiner(ctx, miner, DealProtocolv120, DealProtocolv110)
+	// Get the supported deal protocols for the miner's peer
+	proto, err := fc.host.Peerstore().FirstSupportedProtocol(mpid, DealProtocolv120, DealProtocolv110)
 	if err != nil {
-		return "", fmt.Errorf("connecting to miner %s: %w", miner, err)
+		return "", fmt.Errorf("getting deal protocol for %s: %w", miner, err)
+	}
+	if proto == "" {
+		return "", fmt.Errorf("%s does not support any deal making protocol", miner)
 	}
 
-	defer s.Close() //nolint:errcheck
-	return s.Protocol(), nil
+	return protocol.ID(proto), nil
 }
 
 func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol ...protocol.ID) (inet.Stream, error) {
