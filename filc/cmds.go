@@ -59,6 +59,10 @@ var printLoggersCmd = &cli.Command{
 	},
 }
 
+func tpr(s string, args ...interface{}) {
+	fmt.Printf("[%s] "+s+"\n", append([]interface{}{time.Now().Format("15:04:05")}, args...)...)
+}
+
 var makeDealCmd = &cli.Command{
 	Name:      "deal",
 	Usage:     "Make a storage deal with a miner",
@@ -97,10 +101,6 @@ var makeDealCmd = &cli.Command{
 		fi, err := os.Open(cctx.Args().First())
 		if err != nil {
 			return err
-		}
-
-		tpr := func(s string, args ...interface{}) {
-			fmt.Printf("[%s] "+s+"\n", append([]interface{}{time.Now().Format("15:04:05")}, args...)...)
 		}
 
 		bserv := blockservice.New(nd.Blockstore, nil)
@@ -152,140 +152,126 @@ var makeDealCmd = &cli.Command{
 
 		tpr("storage provider supports deal protocol %s", proto)
 
-		isPushTransfer := proto == filclient.DealProtocolv110
-		var announceAddr multiaddr.Multiaddr
-		if !isPushTransfer {
-			tpr("filc host addr: %s", nd.Host.Addrs())
-			tpr("filc host peer: %s", nd.Host.ID())
-			announce := cctx.String("announce")
-			if announce == "" {
-				return fmt.Errorf("must specify announce address to make deals over deal protocol %s", proto)
-			}
-
-			announceStr := announce + "/p2p/" + nd.Host.ID().String()
-			announceAddr, err = multiaddr.NewMultiaddr(announceStr)
-			if err != nil {
-				return fmt.Errorf("parsing announce address '%s': %w", proto, err)
-			}
-			tpr("filc announce address: %s", announceAddr.String())
-		}
-
-		dbid := uint(rand.Uint32())
-		dealUUID := uuid.New()
-		pullComplete := make(chan error)
-		var lastStatus datatransfer.Status
-		if !isPushTransfer {
-			// Subscribe to pull transfer updates.
-			unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
-				if dbid != evtdbid {
-					return
-				}
-
-				statusChanged := st.Status != lastStatus
-				logstr, err := logStatus(&st, statusChanged)
-				if err != nil {
-					pullComplete <- err
-					return
-				}
-
-				if logstr != "" {
-					tpr(logstr)
-				}
-
-				if st.Status == datatransfer.Completed {
-					tpr("transfer completed, miner: %s, propcid: %s", miner, propnd.Cid())
-					pullComplete <- nil
-				}
-
-				lastStatus = st.Status
-			})
-			if err != nil {
-				return err
-			}
-			defer unsubPullEvts()
-
-			// Keep the connection alive
-			ctx, cancel := context.WithCancel(cctx.Context)
-			defer cancel()
-			go keepConnection(ctx, fc, nd.Host, miner, tpr)
-		}
-
-		// Send the deal proposal
-		var cleanupDealPrep func()
 		switch {
 		case proto == filclient.DealProtocolv110:
-			_, err = fc.SendProposalV110(cctx.Context, *proposal, propnd.Cid())
+			return makev110Deal(cctx, fc, miner, proposal, propnd.Cid(), obj.Cid())
 		case proto == filclient.DealProtocolv120:
-			tpr("sending v1.2.0 deal proposal with dbid %d, deal uuid %s", dbid, dealUUID.String())
-			cleanupDealPrep, _, err = sendProposalV120(cctx.Context, fc, announceAddr, *proposal, propnd.Cid(), dealUUID, dbid)
+			return makev120Deal(cctx, fc, nd.Host, miner, proposal, propnd.Cid())
 		default:
-			err = fmt.Errorf("unrecognized deal protocol %s", proto)
+			return fmt.Errorf("unrecognized deal protocol %s", proto)
 		}
-
-		if err != nil {
-			if cleanupDealPrep != nil {
-				cleanupDealPrep()
-			}
-			return err
-		}
-
-		tpr("miner accepted the deal!")
-
-		// Check whether this is a push or pull transfer
-		if !isPushTransfer {
-			// It's a pull transfer. Wait for the transfer to complete (while
-			// outputting logs)
-			select {
-			case <-cctx.Context.Done():
-				return cctx.Context.Err()
-			case err = <-pullComplete:
-			}
-			return err
-		}
-
-		// Start the push transfer
-		tpr("starting data transfer... %s", propnd.Cid())
-		chanid, err := fc.StartDataTransfer(cctx.Context, miner, propnd.Cid(), obj.Cid())
-		if err != nil {
-			return err
-		}
-
-		// Periodically check the transfer status and output a log
-		for {
-			status, err := fc.TransferStatus(cctx.Context, chanid)
-			if err != nil {
-				return err
-			}
-
-			statusChanged := status.Status != lastStatus
-			logstr, err := logStatus(status, statusChanged)
-			if err != nil {
-				return err
-			}
-			if logstr != "" {
-				tpr(logstr)
-			}
-			if status.Status == datatransfer.Completed {
-				tpr("transfer completed, miner: %s, propcid: %s", miner, propnd.Cid())
-				return nil
-			}
-			lastStatus = status.Status
-
-			time.Sleep(time.Millisecond * 100)
-		}
-		return nil
 	},
 }
 
-func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr multiaddr.Multiaddr, netprop network.Proposal, propCid cid.Cid, dealUUID uuid.UUID, dbid uint) (func(), bool, error) {
+func makev110Deal(cctx *cli.Context, fc *filclient.FilClient, miner address.Address, proposal *network.Proposal, propCid cid.Cid, dataCid cid.Cid) error {
+	ctx := cctx.Context
+
+	// Send the deal proposal
+	_, err := fc.SendProposalV110(ctx, *proposal, propCid)
+	if err != nil {
+		return err
+	}
+
+	tpr("miner accepted the deal!")
+
+	// Start the push transfer
+	tpr("starting data transfer... %s", propCid)
+	chanid, err := fc.StartDataTransfer(ctx, miner, propCid, dataCid)
+	if err != nil {
+		return err
+	}
+
+	// Periodically check the transfer status and output a log
+	var lastStatus datatransfer.Status
+	for {
+		status, err := fc.TransferStatus(ctx, chanid)
+		if err != nil {
+			return err
+		}
+
+		statusChanged := status.Status != lastStatus
+		logstr, err := logStatus(status, statusChanged)
+		if err != nil {
+			return err
+		}
+		if logstr != "" {
+			tpr(logstr)
+		}
+		if status.Status == datatransfer.Completed {
+			tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
+			return nil
+		}
+		lastStatus = status.Status
+
+		time.Sleep(time.Millisecond * 100)
+	}
+	return nil
+}
+
+func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner address.Address, netprop *network.Proposal, propCid cid.Cid) error {
+	var announceAddr multiaddr.Multiaddr
+	tpr("filc host addr: %s", h.Addrs())
+	tpr("filc host peer: %s", h.ID())
+	announce := cctx.String("announce")
+	if announce == "" {
+		return fmt.Errorf("must specify announce address to make deals over deal v1.2.0 protocol %s")
+	}
+
+	announceStr := announce + "/p2p/" + h.ID().String()
+	announceAddr, err := multiaddr.NewMultiaddr(announceStr)
+	if err != nil {
+		return fmt.Errorf("parsing announce address '%s': %w", announceStr, err)
+	}
+	tpr("filc announce address: %s", announceAddr.String())
+
+	dbid := uint(rand.Uint32())
+	dealUUID := uuid.New()
+	pullComplete := make(chan error)
+	var lastStatus datatransfer.Status
+
+	// Subscribe to pull transfer updates.
+	unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
+		if dbid != evtdbid {
+			return
+		}
+
+		statusChanged := st.Status != lastStatus
+		logstr, err := logStatus(&st, statusChanged)
+		if err != nil {
+			pullComplete <- err
+			return
+		}
+
+		if logstr != "" {
+			tpr(logstr)
+		}
+
+		if st.Status == datatransfer.Completed {
+			tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
+			pullComplete <- nil
+		}
+
+		lastStatus = st.Status
+	})
+	if err != nil {
+		return err
+	}
+	defer unsubPullEvts()
+
+	// Keep the connection alive
+	ctx, cancel := context.WithCancel(cctx.Context)
+	defer cancel()
+	go keepConnection(ctx, fc, h, miner, tpr)
+
 	// In deal protocol v120 the transfer will be initiated by the
 	// storage provider (a pull transfer) so we need to prepare for
 	// the data request
+	tpr("sending v1.2.0 deal proposal with dbid %d, deal uuid %s", dbid, dealUUID.String())
 
 	// Create an auth token to be used in the request
 	authToken, err := httptransport.GenerateAuthToken()
 	if err != nil {
-		return nil, false, xerrors.Errorf("generating auth token for deal: %w", err)
+		return xerrors.Errorf("generating auth token for deal: %w", err)
 	}
 
 	// Add an auth token for the data to the auth DB
@@ -293,16 +279,26 @@ func sendProposalV120(ctx context.Context, fc *filclient.FilClient, announceAddr
 	size := netprop.Piece.RawBlockSize
 	err = fc.Libp2pTransferMgr.PrepareForDataRequest(ctx, dbid, authToken, propCid, rootCid, size)
 	if err != nil {
-		return nil, false, xerrors.Errorf("preparing for data request: %w", err)
-	}
-
-	cleanup := func() {
-		fc.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken) //nolint:errcheck
+		return xerrors.Errorf("preparing for data request: %w", err)
 	}
 
 	// Send the deal proposal to the storage provider
-	propPhase, err := fc.SendProposalV120(ctx, dbid, netprop, dealUUID, announceAddr, authToken)
-	return cleanup, propPhase, err
+	_, err = fc.SendProposalV120(ctx, dbid, *netprop, dealUUID, announceAddr, authToken)
+	if err != nil {
+		// Clean up auth token
+		fc.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken) //nolint:errcheck
+		return err
+	}
+
+	tpr("miner accepted the deal!")
+
+	// Wait for the transfer to complete (while outputting logs)
+	select {
+	case <-cctx.Context.Done():
+		return cctx.Context.Err()
+	case err = <-pullComplete:
+	}
+	return err
 }
 
 func logStatus(status *filclient.ChannelState, changed bool) (string, error) {
