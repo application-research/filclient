@@ -1211,7 +1211,8 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 
 	rootCid := proposal.PayloadCID
 	dealID := proposal.ID
-
+	allBytesReceived := false
+	dealComplete := false
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
 		chanidLk.Lock()
@@ -1293,7 +1294,10 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 				case retrievalmarket.DealStatusErrored:
 					finish(fmt.Errorf("deal errored: %s", resType.Message))
 				case retrievalmarket.DealStatusCompleted:
-					finish(nil)
+					if allBytesReceived {
+						finish(nil)
+					}
+					dealComplete = true
 				}
 			}
 		case datatransfer.PauseInitiator:
@@ -1301,6 +1305,10 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 		case datatransfer.PauseResponder:
 		case datatransfer.ResumeResponder:
 		case datatransfer.FinishTransfer:
+			if dealComplete {
+				finish(nil)
+			}
+			allBytesReceived = true
 		case datatransfer.ResponderCompletes:
 		case datatransfer.ResponderBeginsFinalization:
 		case datatransfer.BeginFinalizing:
@@ -1356,6 +1364,7 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 		if err != nil {
 			return nil, fmt.Errorf("data transfer failed: %w", err)
 		}
+		log.Debugf("data transfer for retrieval complete")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
