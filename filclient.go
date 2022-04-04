@@ -1095,7 +1095,7 @@ func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Addr
 	amount := abi.TokenAmount(types.BigMul(types.BigInt(reqBalance), types.NewInt(2)))
 
 	fmt.Println("getting payment channel: ", fc.ClientAddr, dest, amount)
-	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount)
+	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount, paychmgr.GetOpts{})
 	if err != nil {
 		return address.Undef, fmt.Errorf("failed to get payment channel: %w", err)
 	}

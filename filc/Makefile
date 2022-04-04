@@ -5,6 +5,6 @@ filc: *.go
 
 .PHONY: clean
 clean:
-	rm $(BINS)
+	rm -f $(BINS)
 
 all: filc
