@@ -291,6 +291,12 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 		maddrs = append(maddrs, ma)
 	}
 
+	// FIXME - lotus-client-proper falls back on the DHT when it has a peerid but no multiaddr
+	// filc should do the same
+	if len(maddrs) == 0 {
+		return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no multiaddrs set on chain", maddr))
+	}
+
 	if err := fc.host.Connect(ctx, peer.AddrInfo{
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
