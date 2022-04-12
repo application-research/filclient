@@ -218,7 +218,7 @@ func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner
 	tpr("filc host peer: %s", h.ID())
 	announce := cctx.String("announce")
 	if announce == "" {
-		return fmt.Errorf("must specify announce address to make deals over deal v1.2.0 protocol %s")
+		return fmt.Errorf("must specify announce address to make deals over deal v1.2.0 protocol %s", filclient.DealProtocolv120)
 	}
 
 	announceStr := announce + "/p2p/" + h.ID().String()
