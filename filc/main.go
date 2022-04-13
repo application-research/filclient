@@ -39,6 +39,7 @@ func main() {
 	app.Commands = []*cli.Command{
 		printLoggersCmd,
 		makeDealCmd,
+		dealStatusCmd,
 		getAskCmd,
 		infoCmd,
 		listDealsCmd,
