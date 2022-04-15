@@ -199,6 +199,50 @@ var makeDealCmd = &cli.Command{
 	},
 }
 
+var dealStatusCmd = &cli.Command{
+	Name:      "deal-status",
+	Usage:     "Get on-chain deal status",
+	ArgsUsage: "<proposal cid>",
+	Flags: []cli.Flag{
+		flagMinerRequired,
+	},
+	Action: func(cctx *cli.Context) error {
+		if !cctx.Args().Present() {
+			return fmt.Errorf("proposal CID must be specified")
+		}
+
+		miner, err := parseMiner(cctx)
+		if err != nil {
+			return fmt.Errorf("invalid miner address: %w", err)
+		}
+
+		cid, err := cid.Decode(cctx.Args().First())
+		if err != nil {
+			return fmt.Errorf("invalid proposal CID: %w", err)
+		}
+
+		nd, err := setup(cctx.Context, ddir(cctx))
+		if err != nil {
+			return fmt.Errorf("could not set up node: %w", err)
+		}
+
+		fc, closer, err := clientFromNode(cctx, nd, ddir(cctx))
+		if err != nil {
+			return fmt.Errorf("could not initialize filclient: %w", err)
+		}
+		defer closer()
+
+		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid)
+		if err != nil {
+			return fmt.Errorf("could not get deal state from provider: %w", err)
+		}
+
+		printDealStatus(dealStatus)
+
+		return nil
+	},
+}
+
 var infoCmd = &cli.Command{
 	Name:      "info",
 	Usage:     "Display wallet information",
