@@ -393,7 +393,6 @@ func (c *connWatcher) processDisconnect() {
 	}
 }
 
-
 func (c *connWatcher) Listen(n inet.Network, m multiaddr.Multiaddr)      {}
 func (c *connWatcher) ListenClose(n inet.Network, m multiaddr.Multiaddr) {}
 func (c *connWatcher) Connected(n inet.Network, conn inet.Conn)          {}
@@ -433,7 +432,7 @@ var dealStatusCmd = &cli.Command{
 		}
 		defer closer()
 
-		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid)
+		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid, nil)
 		if err != nil {
 			return fmt.Errorf("could not get deal state from provider: %w", err)
 		}
