@@ -27,6 +27,57 @@ Max Piece Size: %v
 	)
 }
 
+func printDealStatus(state *storagemarket.ProviderDealState) {
+	fmt.Printf(`DEAL STATUS
+-----
+Deal State:     %s
+Proposal CID:   %s
+Add Funds CID:  %s
+Publish CID:    %s
+Deal ID:        %d
+Fast Retrieval: %t
+`,
+		storagemarket.DealStates[state.State],
+		state.ProposalCid,
+		state.AddFundsCid,
+		state.PublishCid,
+		state.DealID,
+		state.FastRetrieval,
+	)
+
+	if state.Proposal != nil {
+		fmt.Printf(`Proposal:
+	Piece CID:               %s
+	Piece Size:              %d (%s)
+	Verified Deal:           %t
+	Client:                  %s
+	Provider:                %s
+	Label:                   %s
+	Start Epoch:             %d
+	End Epoch:               %d
+	Storage Price Per Epoch: %d (%s)
+	Provider Collateral:     %d (%s)
+	Client Collateral:       %d (%d)
+`,
+			state.Proposal.PieceCID,
+			state.Proposal.PieceSize, humanize.IBytes(uint64(state.Proposal.PieceSize)),
+			state.Proposal.VerifiedDeal,
+			state.Proposal.Client,
+			state.Proposal.Provider,
+			state.Proposal.Label,
+			state.Proposal.StartEpoch,
+			state.Proposal.EndEpoch,
+			state.Proposal.StoragePricePerEpoch, types.FIL(state.Proposal.StoragePricePerEpoch),
+			state.Proposal.ProviderCollateral, types.FIL(state.Proposal.ProviderCollateral),
+			state.Proposal.ClientCollateral, types.FIL(state.Proposal.ClientCollateral),
+		)
+	}
+
+	if state.Message != "" {
+		fmt.Printf("Message: %s\n", state.Message)
+	}
+}
+
 func printRetrievalStats(stats RetrievalStats) {
 	switch stats := stats.(type) {
 	case *FILRetrievalStats:
