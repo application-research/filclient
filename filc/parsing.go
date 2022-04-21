@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/google/uuid"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -63,4 +64,19 @@ func parseOutput(cctx *cli.Context) (string, error) {
 	}
 
 	return path, nil
+}
+
+func parseDealUUID(cctx *cli.Context) (uuid.UUID, error) {
+	dealUUIDStr := cctx.String(flagDealUUID.Name)
+
+	if dealUUIDStr == "" {
+		return uuid.Nil, nil
+	}
+
+	dealUUID, err := uuid.Parse(dealUUIDStr)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to parse deal UUID '%s'", dealUUIDStr)
+	}
+
+	return dealUUID, nil
 }

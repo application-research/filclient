@@ -405,6 +405,7 @@ var dealStatusCmd = &cli.Command{
 	ArgsUsage: "<proposal cid>",
 	Flags: []cli.Flag{
 		flagMinerRequired,
+		flagDealUUID,
 	},
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
@@ -414,6 +415,11 @@ var dealStatusCmd = &cli.Command{
 		miner, err := parseMiner(cctx)
 		if err != nil {
 			return fmt.Errorf("invalid miner address: %w", err)
+		}
+
+		dealUUID, err := parseDealUUID(cctx)
+		if err != nil {
+			return fmt.Errorf("invalid deal UUID: %w", err)
 		}
 
 		cid, err := cid.Decode(cctx.Args().First())
@@ -432,7 +438,12 @@ var dealStatusCmd = &cli.Command{
 		}
 		defer closer()
 
-		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid, nil)
+		var dealUUIDPtr *uuid.UUID
+		if dealUUID != uuid.Nil {
+			dealUUIDPtr = &dealUUID
+		}
+
+		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid, dealUUIDPtr)
 		if err != nil {
 			return fmt.Errorf("could not get deal state from provider: %w", err)
 		}
