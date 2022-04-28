@@ -41,6 +41,10 @@ var flagNetwork = &cli.StringFlag{
 	Value:       NetworkAuto,
 }
 
+var flagCAR = &cli.BoolFlag{
+	Name: "car",
+}
+
 const (
 	NetworkFIL  = "fil"
 	NetworkIPFS = "ipfs"

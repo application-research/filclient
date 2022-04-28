@@ -24,6 +24,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	unixfile "github.com/ipfs/go-unixfs/file"
 	"github.com/ipfs/go-unixfs/importer"
+	"github.com/ipld/go-car"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	basicnode "github.com/ipld/go-ipld-prime/node/basic"
@@ -354,6 +355,7 @@ var retrieveFileCmd = &cli.Command{
 		flagOutput,
 		flagNetwork,
 		flagDmPathSel,
+		flagCAR,
 	},
 	Action: func(cctx *cli.Context) error {
 
@@ -536,13 +538,23 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dservOffline, dnode)
-		if err != nil {
-			return err
-		}
+		if cctx.Bool(flagCAR.Name) {
+			// Write file as car file
+			file, err := os.Create(output)
+			if err != nil {
+				return err
+			}
+			car.WriteCar(cctx.Context, dservOffline, []cid.Cid{c}, file)
+		} else {
+			// Otherwise write file as UnixFS File
+			ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dservOffline, dnode)
+			if err != nil {
+				return err
+			}
 
-		if err := files.WriteTo(ufsFile, output); err != nil {
-			return err
+			if err := files.WriteTo(ufsFile, output); err != nil {
+				return err
+			}
 		}
 
 		fmt.Println("Saved output to", output)
