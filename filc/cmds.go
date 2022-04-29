@@ -355,7 +355,7 @@ var retrieveFileCmd = &cli.Command{
 		flagOutput,
 		flagNetwork,
 		flagDmPathSel,
-		flagCAR,
+		flagCar,
 	},
 	Action: func(cctx *cli.Context) error {
 
@@ -538,7 +538,7 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		if cctx.Bool(flagCAR.Name) {
+		if cctx.Bool(flagCar.Name) {
 			// Write file as car file
 			file, err := os.Create(output)
 			if err != nil {
@@ -552,7 +552,7 @@ var retrieveFileCmd = &cli.Command{
 				return err
 			}
 
-			if err := files.WriteTo(ufsFile, output); err != nil {
+			if err := files.WriteTo(ufsFile, output+".car"); err != nil {
 				return err
 			}
 		}

@@ -41,7 +41,7 @@ var flagNetwork = &cli.StringFlag{
 	Value:       NetworkAuto,
 }
 
-var flagCAR = &cli.BoolFlag{
+var flagCar = &cli.BoolFlag{
 	Name: "car",
 }
 
