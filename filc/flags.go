@@ -41,6 +41,10 @@ var flagNetwork = &cli.StringFlag{
 	Value:       NetworkAuto,
 }
 
+var flagDealUUID = &cli.StringFlag{
+	Name: "deal-uuid",
+}
+
 const (
 	NetworkFIL  = "fil"
 	NetworkIPFS = "ipfs"

@@ -2,6 +2,7 @@ package filclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,13 @@ import (
 	"sync"
 	"time"
 
+	boostcar "github.com/filecoin-project/boost/car"
+	smtypes "github.com/filecoin-project/boost/storagemarket/types"
+	"github.com/filecoin-project/boost/storagemarket/types/dealcheckpoints"
+	"github.com/filecoin-project/boost/transport/httptransport"
+	boosttypes "github.com/filecoin-project/boost/transport/types"
 	"github.com/filecoin-project/go-address"
+	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
@@ -17,6 +24,7 @@ import (
 	dtnet "github.com/filecoin-project/go-data-transfer/network"
 	gst "github.com/filecoin-project/go-data-transfer/transport/graphsync"
 	commcid "github.com/filecoin-project/go-fil-commcid"
+	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
@@ -33,6 +41,7 @@ import (
 	paychmgr "github.com/filecoin-project/lotus/paychmgr"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
@@ -47,24 +56,22 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	protocol "github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-
-	commp "github.com/filecoin-project/go-fil-commp-hashhash"
-
-	cborutil "github.com/filecoin-project/go-cbor-util"
 )
 
 var Tracer trace.Tracer = otel.Tracer("filclient")
 
 var log = logging.Logger("filclient")
 
-const DealProtocol = "/fil/storage/mk/1.1.0"
+const DealProtocolv110 = "/fil/storage/mk/1.1.0"
+const DealProtocolv120 = "/fil/storage/mk/1.2.0"
 const QueryAskProtocol = "/fil/storage/ask/1.1.0"
-const DealStatusProtocol = "/fil/storage/status/1.1.0"
+const DealStatusProtocolv110 = "/fil/storage/status/1.1.0"
+const DealStatusProtocolv120 = "/fil/storage/status/1.2.0"
 const RetrievalQueryProtocol = "/fil/retrieval/qry/1.0.0"
 
 const maxTraversalLinks = 32 * (1 << 20)
@@ -93,9 +100,16 @@ type FilClient struct {
 	transport *gst.Transport
 
 	logRetrievalProgressEvents bool
+
+	Libp2pTransferMgr *libp2pTransferManager
 }
 
-type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
+type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error)
+
+type Lp2pDTConfig struct {
+	Server          httptransport.ServerConfig
+	TransferTimeout time.Duration
+}
 
 type Config struct {
 	DataDir                    string
@@ -109,10 +123,10 @@ type Config struct {
 	ChannelMonitorConfig       channelmonitor.Config
 	RetrievalConfigurer        datatransfer.TransportConfigurer
 	LogRetrievalProgressEvents bool
+	Lp2pDTConfig               Lp2pDTConfig
 }
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
-
 	cfg := &Config{
 		Host:       h,
 		Api:        api,
@@ -143,6 +157,18 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 
 			// Called when a restart completes successfully
 			//OnRestartComplete func(id datatransfer.ChannelID)
+		},
+		Lp2pDTConfig: Lp2pDTConfig{
+			Server: httptransport.ServerConfig{
+				// Keep the cache around for one minute after a request
+				// finishes in case the connection bounced in the middle
+				// of a transfer, or there is a request for the same payload
+				// soon after
+				BlockInfoCacheManager: boostcar.NewDelayedUnrefBICM(time.Minute),
+			},
+			// Wait up to 24 hours for the transfer to complete (including
+			// after a connection bounce) before erroring out the deal
+			TransferTimeout: 24 * time.Hour,
 		},
 	}
 
@@ -232,7 +258,22 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		})
 	*/
 
-	return &FilClient{
+	// Create a server for libp2p data transfers
+	lp2pds := namespace.Wrap(cfg.Datastore, datastore.NewKey("/libp2p-dt"))
+	authDB := httptransport.NewAuthTokenDB(lp2pds)
+	dtServer := httptransport.NewLibp2pCarServer(cfg.Host, authDB, cfg.Blockstore, cfg.Lp2pDTConfig.Server)
+
+	// Create a manager to watch for libp2p data transfer events
+	lp2pXferOpts := libp2pTransferManagerOpts{
+		xferTimeout:     cfg.Lp2pDTConfig.TransferTimeout,
+		authCheckPeriod: time.Minute,
+	}
+	libp2pTransferMgr := newLibp2pTransferManager(dtServer, lp2pds, authDB, lp2pXferOpts)
+	if err := libp2pTransferMgr.Start(context.TODO()); err != nil {
+		return nil, err
+	}
+
+	fc := &FilClient{
 		host:                       cfg.Host,
 		api:                        cfg.Api,
 		wallet:                     cfg.Wallet,
@@ -245,25 +286,48 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 		graphSync:                  gse,
 		transport:                  tpt,
 		logRetrievalProgressEvents: cfg.LogRetrievalProgressEvents,
-	}, nil
+		Libp2pTransferMgr:          libp2pTransferMgr,
+	}
+
+	return fc, nil
 }
 
 func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 	fc.computePieceComm = pcf
 }
 
-func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol protocol.ID) (inet.Stream, error) {
+func (fc *FilClient) DealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
+	// Connect to the miner. If there's not already a connection to the miner,
+	// libp2p will open a connection and exchange protocol IDs.
+	mpid, err := fc.ConnectToMiner(ctx, miner)
+	if err != nil {
+		return "", fmt.Errorf("connecting to %s: %w", miner, err)
+	}
+
+	// Get the supported deal protocols for the miner's peer
+	proto, err := fc.host.Peerstore().FirstSupportedProtocol(mpid, DealProtocolv120, DealProtocolv110)
+	if err != nil {
+		return "", fmt.Errorf("getting deal protocol for %s: %w", miner, err)
+	}
+	if proto == "" {
+		return "", fmt.Errorf("%s does not support any deal making protocol", miner)
+	}
+
+	return protocol.ID(proto), nil
+}
+
+func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol ...protocol.ID) (inet.Stream, error) {
 	ctx, span := Tracer.Start(ctx, "streamToMiner", trace.WithAttributes(
 		attribute.Stringer("miner", maddr),
 	))
 	defer span.End()
 
-	mpid, err := fc.connectToMiner(ctx, maddr)
+	mpid, err := fc.ConnectToMiner(ctx, maddr)
 	if err != nil {
 		return nil, err
 	}
 
-	s, err := fc.host.NewStream(ctx, mpid, protocol)
+	s, err := fc.host.NewStream(ctx, mpid, protocol...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open stream to peer: %w", err)
 	}
@@ -272,21 +336,34 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 }
 
 // Errors - ErrMinerConnectionFailed, ErrLotusError
-func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
+func (fc *FilClient) ConnectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
+	addrInfo, err := fc.minerAddrInfo(ctx, maddr)
+	if err != nil {
+		return "", err
+	}
+
+	if err := fc.host.Connect(ctx, *addrInfo); err != nil {
+		return "", NewErrMinerConnectionFailed(err)
+	}
+
+	return addrInfo.ID, nil
+}
+
+func (fc *FilClient) minerAddrInfo(ctx context.Context, maddr address.Address) (*peer.AddrInfo, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		return "", NewErrLotusError(err)
+		return nil, NewErrLotusError(err)
 	}
 
 	if minfo.PeerId == nil {
-		return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no peer ID set", maddr))
+		return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no peer ID set", maddr))
 	}
 
 	var maddrs []multiaddr.Multiaddr
 	for _, mma := range minfo.Multiaddrs {
 		ma, err := multiaddr.NewMultiaddrBytes(mma)
 		if err != nil {
-			return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err))
+			return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err))
 		}
 		maddrs = append(maddrs, ma)
 	}
@@ -294,17 +371,20 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 	// FIXME - lotus-client-proper falls back on the DHT when it has a peerid but no multiaddr
 	// filc should do the same
 	if len(maddrs) == 0 {
-		return "", NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no multiaddrs set on chain", maddr))
+		return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no multiaddrs set on chain", maddr))
 	}
 
 	if err := fc.host.Connect(ctx, peer.AddrInfo{
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
 	}); err != nil {
-		return "", NewErrMinerConnectionFailed(err)
+		return nil, NewErrMinerConnectionFailed(err)
 	}
 
-	return *minfo.PeerId, nil
+	return &peer.AddrInfo{
+		ID:    *minfo.PeerId,
+		Addrs: maddrs,
+	}, nil
 }
 
 func (fc *FilClient) openStreamToPeer(ctx context.Context, addr peer.AddrInfo, protocol protocol.ID) (inet.Stream, error) {
@@ -336,7 +416,7 @@ func (fc *FilClient) connectToPeer(ctx context.Context, addr peer.AddrInfo) erro
 }
 
 func (fc *FilClient) GetMinerVersion(ctx context.Context, maddr address.Address) (string, error) {
-	pid, err := fc.connectToMiner(ctx, maddr)
+	pid, err := fc.ConnectToMiner(ctx, maddr)
 	if err != nil {
 		return "", err
 	}
@@ -406,7 +486,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 	))
 	defer span.End()
 
-	commP, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
+	commP, dataSize, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
 	if err != nil {
 		return nil, err
 	}
@@ -482,32 +562,95 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		Piece: &storagemarket.DataRef{
 			TransferType: storagemarket.TTGraphsync,
 			Root:         data,
+			RawBlockSize: dataSize,
 		},
 		FastRetrieval: true,
 	}, nil
 }
 
-func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal) (*network.SignedResponse, error) {
-	ctx, span := Tracer.Start(ctx, "sendProposal")
+func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Proposal, propCid cid.Cid) (bool, error) {
+	ctx, span := Tracer.Start(ctx, "sendProposalV110")
 	defer span.End()
 
-	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocol)
+	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocolv110)
 	if err != nil {
-		return nil, fmt.Errorf("opening stream to miner: %w", err)
+		return false, fmt.Errorf("opening stream to miner: %w", err)
 	}
 
 	defer s.Close()
 
+	// Send proposal to provider using deal protocol v1.1.0 format
 	var resp network.SignedResponse
-
-	if err := doRpc(ctx, s, netprop, &resp); err != nil {
-		return nil, fmt.Errorf("send proposal rpc: %w", err)
+	if err := doRpc(ctx, s, &netprop, &resp); err != nil {
+		return false, fmt.Errorf("send proposal rpc: %w", err)
 	}
 
-	return &resp, nil
+	switch resp.Response.State {
+	case storagemarket.StorageDealError:
+		return true, fmt.Errorf("error response from miner: %s", resp.Response.Message)
+	case storagemarket.StorageDealProposalRejected:
+		return true, fmt.Errorf("deal rejected by miner: %s", resp.Response.Message)
+	default:
+		return true, fmt.Errorf("unrecognized response from miner: %d %s", resp.Response.State, resp.Response.Message)
+	case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
+	}
+
+	if propCid != resp.Response.Proposal {
+		return true, fmt.Errorf("proposal in saved deal did not match response (%s != %s)", propCid, resp.Response.Proposal)
+	}
+
+	return false, nil
 }
 
-func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop network.Proposal, dealUUID uuid.UUID, announce multiaddr.Multiaddr, authToken string) (bool, error) {
+	ctx, span := Tracer.Start(ctx, "sendProposalV120")
+	defer span.End()
+
+	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocolv120)
+	if err != nil {
+		return false, fmt.Errorf("opening stream to miner: %w", err)
+	}
+
+	defer s.Close()
+
+	// Add the data URL and authorization token to the transfer parameters
+	transferParams, err := json.Marshal(boosttypes.HttpRequest{
+		URL: "libp2p://" + announce.String(),
+		Headers: map[string]string{
+			"Authorization": httptransport.BasicAuthHeader("", authToken),
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("marshalling deal transfer params: %w", err)
+	}
+
+	// Send proposal to storage provider using deal protocol v1.2.0 format
+	params := smtypes.DealParams{
+		DealUUID:           dealUUID,
+		ClientDealProposal: *netprop.DealProposal,
+		DealDataRoot:       netprop.Piece.Root,
+		Transfer: smtypes.Transfer{
+			Type:     "libp2p",
+			ClientID: fmt.Sprintf("%d", dbid),
+			Params:   transferParams,
+			Size:     netprop.Piece.RawBlockSize,
+		},
+	}
+
+	var resp smtypes.DealResponse
+	if err := doRpc(ctx, s, &params, &resp); err != nil {
+		return false, fmt.Errorf("send proposal rpc: %w", err)
+	}
+
+	// Check if the deal proposal was accepted
+	if !resp.Accepted {
+		return true, fmt.Errorf("deal proposal rejected: %s", resp.Message)
+	}
+
+	return false, nil
+}
+
+func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	selectiveCar := car.NewSelectiveCar(
 		context.Background(),
 		bstore,
@@ -517,29 +660,29 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	writer := new(commp.Calc)
 	err = preparedCar.Dump(ctx, writer)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	commpc, size, err := writer.Digest()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	commCid, err := commcid.DataCommitmentV1ToCID(commpc)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
-	return commCid, abi.PaddedPieceSize(size).Unpadded(), nil
+	return commCid, preparedCar.Size(), abi.PaddedPieceSize(size).Unpadded(), nil
 }
 
-func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	selectiveCar := car.NewSelectiveCar(
 		context.Background(),
 		bstore,
@@ -549,21 +692,21 @@ func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore 
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	commpWriter := &writer.Writer{}
 	err = preparedCar.Dump(ctx, commpWriter)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	dataCIDSize, err := commpWriter.Sum()
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
-	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
+	return dataCIDSize.PieceCID, preparedCar.Size(), dataCIDSize.PieceSize.Unpadded(), nil
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
@@ -580,36 +723,111 @@ func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi
 	return commcid.DataCommitmentV1ToCID(rawPaddedCommp)
 }
 
-func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {
-	cidb, err := cborutil.Dump(propCid)
-	if err != nil {
-		return nil, err
+func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, error) {
+	protos := []protocol.ID{DealStatusProtocolv110}
+	if dealUUID != nil {
+		// Deal status protocol v1.2.0 requires a deal uuid, so only include it
+		// if the deal uuid is not nil
+		protos = []protocol.ID{DealStatusProtocolv120, DealStatusProtocolv110}
 	}
-
-	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, cidb, api.MsgMeta{Type: api.MTUnknown})
-	if err != nil {
-		return nil, fmt.Errorf("signing status request failed: %w", err)
-	}
-
-	req := &network.DealStatusRequest{
-		Proposal:  propCid,
-		Signature: *sig,
-	}
-
-	s, err := fc.streamToMiner(ctx, miner, DealStatusProtocol)
+	s, err := fc.streamToMiner(ctx, miner, protos...)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
 
-	var resp network.DealStatusResponse
+	// If the miner only supports deal status protocol v1.1.0,
+	// or we don't have a uuid for the deal
+	if s.Protocol() == DealStatusProtocolv110 {
+		// Query deal status by signed proposal cid
+		cidb, err := cborutil.Dump(propCid)
+		if err != nil {
+			return nil, err
+		}
+
+		sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, cidb, api.MsgMeta{Type: api.MTUnknown})
+		if err != nil {
+			return nil, fmt.Errorf("signing status request failed: %w", err)
+		}
+
+		req := &network.DealStatusRequest{
+			Proposal:  propCid,
+			Signature: *sig,
+		}
+
+		var resp network.DealStatusResponse
+		if err := doRpc(ctx, s, req, &resp); err != nil {
+			return nil, fmt.Errorf("deal status rpc: %w", err)
+		}
+
+		return &resp.DealState, nil
+	}
+
+	// The miner supports deal status protocol v1.2.0 or above.
+	// Query deal status by deal UUID.
+	uuidBytes, err := dealUUID.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("getting uuid bytes: %w", err)
+	}
+	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, uuidBytes, api.MsgMeta{Type: api.MTUnknown})
+	if err != nil {
+		return nil, fmt.Errorf("signing status request failed: %w", err)
+	}
+
+	req := &smtypes.DealStatusRequest{
+		DealUUID:  *dealUUID,
+		Signature: *sig,
+	}
+
+	var resp smtypes.DealStatusResponse
 	if err := doRpc(ctx, s, req, &resp); err != nil {
 		return nil, fmt.Errorf("deal status rpc: %w", err)
 	}
 
-	// TODO: check the signatures and stuff?
+	if resp.Error != "" {
+		return nil, fmt.Errorf("deal status error: %s", resp.Error)
+	}
 
-	return &resp.DealState, nil
+	st := resp.DealStatus
+	if st == nil {
+		return nil, fmt.Errorf("deal status is nil")
+	}
+
+	return &storagemarket.ProviderDealState{
+		State:         toLegacyDealStatus(st),
+		Message:       st.Error,
+		Proposal:      &st.Proposal,
+		ProposalCid:   &st.SignedProposalCid,
+		PublishCid:    st.PublishCid,
+		DealID:        st.ChainDealID,
+		FastRetrieval: true,
+	}, nil
+}
+
+// toLegacyDealStatus converts a v1.2.0 deal status to a legacy deal status
+func toLegacyDealStatus(ds *smtypes.DealStatus) storagemarket.StorageDealStatus {
+	if ds.Error != "" {
+		return storagemarket.StorageDealError
+	}
+
+	switch ds.Status {
+	case dealcheckpoints.Accepted.String():
+		return storagemarket.StorageDealWaitingForData
+	case dealcheckpoints.Transferred.String():
+		return storagemarket.StorageDealVerifyData
+	case dealcheckpoints.Published.String():
+		return storagemarket.StorageDealPublishing
+	case dealcheckpoints.PublishConfirmed.String():
+		return storagemarket.StorageDealStaged
+	case dealcheckpoints.AddedPiece.String():
+		return storagemarket.StorageDealAwaitingPreCommit
+	case dealcheckpoints.IndexedAndAnnounced.String():
+		return storagemarket.StorageDealAwaitingPreCommit
+	case dealcheckpoints.Complete.String():
+		return storagemarket.StorageDealSealing
+	}
+
+	return storagemarket.StorageDealUnknown
 }
 
 func (fc *FilClient) MinerPeer(ctx context.Context, miner address.Address) (peer.AddrInfo, error) {
@@ -673,6 +891,8 @@ type ChannelState struct {
 
 	ChannelID datatransfer.ChannelID `json:"channelId"`
 
+	TransferID string `json:"transferId"`
+
 	// Vouchers returns all vouchers sent on this channel
 	//Vouchers []datatransfer.Voucher
 
@@ -705,6 +925,7 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 		Message:    st.Message(),
 		BaseCid:    st.BaseCID().String(),
 		ChannelID:  st.ChannelID(),
+		TransferID: st.ChannelID().String(),
 		Stages:     st.Stages(),
 		//Vouchers:          st.Vouchers(),
 		//VoucherResults:    st.VoucherResults(),
@@ -715,8 +936,31 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 	}
 }
 
-func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[datatransfer.ChannelID]datatransfer.ChannelState, error) {
+func (fc *FilClient) V110TransfersInProgress(ctx context.Context) (map[datatransfer.ChannelID]datatransfer.ChannelState, error) {
 	return fc.dataTransfer.InProgressChannels(ctx)
+}
+
+func (fc *FilClient) TransfersInProgress(ctx context.Context) (map[string]*ChannelState, error) {
+	v1dts, err := fc.dataTransfer.InProgressChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	v2dts, err := fc.Libp2pTransferMgr.All()
+	if err != nil {
+		return nil, err
+	}
+
+	dts := make(map[string]*ChannelState, len(v1dts)+len(v2dts))
+	for id, dt := range v1dts {
+		dts[id.String()] = ChannelStateConv(dt)
+	}
+	for id, dt := range v2dts {
+		dtcp := dt
+		dts[id] = &dtcp
+	}
+
+	return dts, nil
 }
 
 type GraphSyncDataTransfer struct {
@@ -859,6 +1103,17 @@ func (fc *FilClient) TransferStatus(ctx context.Context, chanid *datatransfer.Ch
 	return ChannelStateConv(st), nil
 }
 
+func (fc *FilClient) TransferStatusByID(ctx context.Context, id string) (*ChannelState, error) {
+	chid, err := ChannelIDFromString(id)
+	if err == nil {
+		// If the id is a data transfer channel id, get the transfer status by channel id
+		return fc.TransferStatus(ctx, chid)
+	}
+
+	// Get the transfer status by transfer id
+	return fc.Libp2pTransferMgr.byId(id)
+}
+
 var ErrNoTransferFound = fmt.Errorf("no transfer found")
 
 func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.Cid, miner address.Address) (*ChannelState, error) {
@@ -871,6 +1126,18 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 		return nil, err
 	}
 
+	// Check if there's a storage deal transfer with the miner that matches the
+	// payload CID
+	// 1. over data transfer v1.2
+	xfer, err := fc.Libp2pTransferMgr.byRemoteAddrAndPayloadCid(mpid.ID.Pretty(), content)
+	if err != nil {
+		return nil, err
+	}
+	if xfer != nil {
+		return xfer, nil
+	}
+
+	// 2. over data transfer v1.1
 	inprog, err := fc.dataTransfer.InProgressChannels(ctx)
 	if err != nil {
 		return nil, err
@@ -899,7 +1166,7 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 	ctx, span := Tracer.Start(ctx, "startDataTransfer")
 	defer span.End()
 
-	mpid, err := fc.connectToMiner(ctx, miner)
+	mpid, err := fc.ConnectToMiner(ctx, miner)
 	if err != nil {
 		return nil, err
 	}
@@ -1022,7 +1289,7 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 	// make sure we at least have an open connection to the miner
 	if fc.host.Network().Connectedness(st.RemotePeer) != inet.Connected {
 		// try reconnecting
-		mpid, err := fc.connectToMiner(ctx, miner)
+		mpid, err := fc.ConnectToMiner(ctx, miner)
 		if err != nil {
 			return err
 		}
@@ -1101,10 +1368,13 @@ func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Addr
 		return *avail.Channel, nil
 	}
 
-	amount := abi.TokenAmount(types.BigMul(types.BigInt(reqBalance), types.NewInt(2)))
+	amount := types.BigMul(types.BigInt(reqBalance), types.NewInt(2))
 
 	fmt.Println("getting payment channel: ", fc.ClientAddr, dest, amount)
-	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount, paychmgr.GetOpts{})
+	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount, paychmgr.GetOpts{
+		Reserve:  false,
+		OffChain: false,
+	})
 	if err != nil {
 		return address.Undef, fmt.Errorf("failed to get payment channel: %w", err)
 	}

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
 	lotusactors "github.com/filecoin-project/lotus/chain/actors"
@@ -34,6 +34,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/xerrors"
 )
 
 type DummyDataGen struct {
@@ -149,17 +150,15 @@ func TestStorage(t *testing.T) {
 
 		fmt.Printf("Sending proposal\n")
 
-		proposalRes, err := fc.SendProposal(ctx, proposal)
-		require.NoError(t, err)
-
-		switch proposalRes.Response.State {
-		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealAcceptWait:
-			fmt.Printf("Waiting for data\n")
-		case storagemarket.StorageDealProposalAccepted:
-			fmt.Printf("Storage deal accepted but not yet waiting for data\n")
-		default:
-			t.Fatalf("Test deal was not accepted")
+		propnd, err := cborutil.AsIpld(proposal.DealProposal)
+		if err != nil {
+			return xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
 		}
+
+		propCid := propnd.Cid()
+
+		_, err = fc.SendProposalV110(ctx, *proposal, propCid)
+		require.NoError(t, err)
 
 		var chanid *datatransfer.ChannelID
 		var chanidLk sync.Mutex
@@ -196,7 +195,7 @@ func TestStorage(t *testing.T) {
 		fmt.Printf("Starting data transfer\n")
 
 		chanidLk.Lock()
-		chanid, err = fc.StartDataTransfer(ctx, miner.ActorAddr, proposalRes.Response.Proposal, obj.Cid())
+		chanid, err = fc.StartDataTransfer(ctx, miner.ActorAddr, propCid, obj.Cid())
 		chanidLk.Unlock()
 		require.NoError(t, err)
 

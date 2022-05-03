@@ -1,20 +1,25 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
+	"github.com/filecoin-project/boost/transport/httptransport"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
@@ -31,7 +36,11 @@ import (
 	"github.com/ipld/go-ipld-prime/traversal/selector"
 	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	textselector "github.com/ipld/go-ipld-selector-text-lite"
+	"github.com/libp2p/go-libp2p-core/host"
+	inet "github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/multiformats/go-multiaddr"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -50,6 +59,10 @@ var printLoggersCmd = &cli.Command{
 	},
 }
 
+func tpr(s string, args ...interface{}) {
+	fmt.Printf("[%s] "+s+"\n", append([]interface{}{time.Now().Format("15:04:05")}, args...)...)
+}
+
 var makeDealCmd = &cli.Command{
 	Name:      "deal",
 	Usage:     "Make a storage deal with a miner",
@@ -57,6 +70,10 @@ var makeDealCmd = &cli.Command{
 	Flags: []cli.Flag{
 		flagMinerRequired,
 		flagVerified,
+		&cli.StringFlag{
+			Name:  "announce",
+			Usage: "the public multi-address from which to download the data (for deals with protocol v120)",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
@@ -86,10 +103,6 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		tpr := func(s string, args ...interface{}) {
-			fmt.Printf("[%s] "+s+"\n", append([]interface{}{time.Now().Format("15:04:05")}, args...)...)
-		}
-
 		bserv := blockservice.New(nd.Blockstore, nil)
 		dserv := merkledag.NewDAGService(bserv)
 
@@ -103,9 +116,10 @@ var makeDealCmd = &cli.Command{
 
 		tpr("File CID: %s", obj.Cid())
 
+		tpr("getting ask from storage provider %s...", miner)
 		ask, err := fc.GetAsk(cctx.Context, miner)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting ask from storage provider %s: %w", miner, err)
 		}
 
 		verified := parseVerified(cctx)
@@ -113,9 +127,13 @@ var makeDealCmd = &cli.Command{
 		price := ask.Ask.Ask.Price
 		if verified {
 			price = ask.Ask.Ask.VerifiedPrice
+			tpr("storage provider ask for verified deals: %d", price)
+		} else {
+			tpr("storage provider ask: %d", price)
 		}
 
-		proposal, err := fc.MakeDeal(cctx.Context, miner, obj.Cid(), price, 0, 2880*365, verified)
+		minPieceSize := ask.Ask.Ask.MinPieceSize
+		proposal, err := fc.MakeDeal(cctx.Context, miner, obj.Cid(), price, minPieceSize, 2880*365, verified)
 		if err != nil {
 			return err
 		}
@@ -131,73 +149,255 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		resp, err := fc.SendProposal(cctx.Context, proposal)
+		proto, err := fc.DealProtocolForMiner(cctx.Context, miner)
 		if err != nil {
 			return err
 		}
 
-		tpr("response state: %d", resp.Response.State)
-		switch resp.Response.State {
-		case storagemarket.StorageDealError:
-			return fmt.Errorf("error response from miner: %s", resp.Response.Message)
-		case storagemarket.StorageDealProposalRejected:
-			return fmt.Errorf("deal rejected by miner: %s", resp.Response.Message)
+		tpr("storage provider supports deal protocol %s", proto)
+
+		switch {
+		case proto == filclient.DealProtocolv110:
+			return makev110Deal(cctx, fc, miner, proposal, propnd.Cid(), obj.Cid())
+		case proto == filclient.DealProtocolv120:
+			return makev120Deal(cctx, fc, nd.Host, miner, proposal, propnd.Cid())
 		default:
-			return fmt.Errorf("unrecognized response from miner: %d %s", resp.Response.State, resp.Response.Message)
-		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
-			tpr("miner accepted the deal!")
+			return fmt.Errorf("unrecognized deal protocol %s", proto)
 		}
-
-		tpr("starting data transfer... %s", resp.Response.Proposal)
-
-		chanid, err := fc.StartDataTransfer(cctx.Context, miner, resp.Response.Proposal, obj.Cid())
-		if err != nil {
-			return err
-		}
-
-		var lastStatus datatransfer.Status
-	loop:
-		for {
-			status, err := fc.TransferStatus(cctx.Context, chanid)
-			if err != nil {
-				return err
-			}
-
-			switch status.Status {
-			case datatransfer.Failed:
-				return fmt.Errorf("data transfer failed: %s", status.Message)
-			case datatransfer.Cancelled:
-				return fmt.Errorf("transfer cancelled: %s", status.Message)
-			case datatransfer.Failing:
-				tpr("data transfer failing... %s", status.Message)
-				// I guess we just wait until its failed all the way?
-			case datatransfer.Requested:
-				if lastStatus != status.Status {
-					tpr("data transfer requested")
-				}
-				//fmt.Println("transfer is requested, hasnt started yet")
-				// probably okay
-			case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing:
-				if lastStatus != status.Status {
-					tpr("current state: %s", status.StatusStr)
-				}
-			case datatransfer.Completed:
-				tpr("transfer complete!")
-				break loop
-			case datatransfer.Ongoing:
-				fmt.Printf("[%s] transfer progress: %d      \n", time.Now().Format("15:04:05"), status.Sent)
-			default:
-				tpr("Unexpected data transfer state: %d (msg = %s)", status.Status, status.Message)
-			}
-			time.Sleep(time.Millisecond * 100)
-			lastStatus = status.Status
-		}
-
-		tpr("transfer completed, miner: %s, propcid: %s %s", miner, resp.Response.Proposal, propnd.Cid())
-
-		return nil
 	},
 }
+
+func makev110Deal(cctx *cli.Context, fc *filclient.FilClient, miner address.Address, proposal *network.Proposal, propCid cid.Cid, dataCid cid.Cid) error {
+	ctx := cctx.Context
+
+	// Send the deal proposal
+	_, err := fc.SendProposalV110(ctx, *proposal, propCid)
+	if err != nil {
+		return err
+	}
+
+	tpr("miner accepted the deal!")
+
+	// Start the push transfer
+	tpr("starting data transfer... %s", propCid)
+	chanid, err := fc.StartDataTransfer(ctx, miner, propCid, dataCid)
+	if err != nil {
+		return err
+	}
+
+	// Periodically check the transfer status and output a log
+	var lastStatus datatransfer.Status
+	for {
+		status, err := fc.TransferStatus(ctx, chanid)
+		if err != nil {
+			return err
+		}
+
+		statusChanged := status.Status != lastStatus
+		logstr, err := logStatus(status, statusChanged)
+		if err != nil {
+			return err
+		}
+		if logstr != "" {
+			tpr(logstr)
+		}
+		if status.Status == datatransfer.Completed {
+			tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
+			return nil
+		}
+		lastStatus = status.Status
+
+		time.Sleep(time.Millisecond * 100)
+	}
+	return nil
+}
+
+func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner address.Address, netprop *network.Proposal, propCid cid.Cid) error {
+	var announceAddr multiaddr.Multiaddr
+	tpr("filc host addr: %s", h.Addrs())
+	tpr("filc host peer: %s", h.ID())
+	announce := cctx.String("announce")
+	if announce == "" {
+		return fmt.Errorf("must specify announce address to make deals over deal v1.2.0 protocol %s", filclient.DealProtocolv120)
+	}
+
+	announceStr := announce + "/p2p/" + h.ID().String()
+	announceAddr, err := multiaddr.NewMultiaddr(announceStr)
+	if err != nil {
+		return fmt.Errorf("parsing announce address '%s': %w", announceStr, err)
+	}
+	tpr("filc announce address: %s", announceAddr.String())
+
+	dbid := uint(rand.Uint32())
+	dealUUID := uuid.New()
+	pullComplete := make(chan error)
+	var lastStatus datatransfer.Status
+
+	// Subscribe to pull transfer updates.
+	unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
+		if dbid != evtdbid {
+			return
+		}
+
+		statusChanged := st.Status != lastStatus
+		logstr, err := logStatus(&st, statusChanged)
+		if err != nil {
+			pullComplete <- err
+			return
+		}
+
+		if logstr != "" {
+			tpr(logstr)
+		}
+
+		if st.Status == datatransfer.Completed {
+			tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
+			pullComplete <- nil
+		}
+
+		lastStatus = st.Status
+	})
+	if err != nil {
+		return err
+	}
+	defer unsubPullEvts()
+
+	// Keep the connection alive
+	ctx, cancel := context.WithCancel(cctx.Context)
+	defer cancel()
+	go keepConnection(ctx, fc, h, miner, tpr)
+
+	// In deal protocol v120 the transfer will be initiated by the
+	// storage provider (a pull transfer) so we need to prepare for
+	// the data request
+	tpr("sending v1.2.0 deal proposal with dbid %d, deal uuid %s", dbid, dealUUID.String())
+
+	// Create an auth token to be used in the request
+	authToken, err := httptransport.GenerateAuthToken()
+	if err != nil {
+		return xerrors.Errorf("generating auth token for deal: %w", err)
+	}
+
+	// Add an auth token for the data to the auth DB
+	rootCid := netprop.Piece.Root
+	size := netprop.Piece.RawBlockSize
+	err = fc.Libp2pTransferMgr.PrepareForDataRequest(ctx, dbid, authToken, propCid, rootCid, size)
+	if err != nil {
+		return xerrors.Errorf("preparing for data request: %w", err)
+	}
+
+	// Send the deal proposal to the storage provider
+	_, err = fc.SendProposalV120(ctx, dbid, *netprop, dealUUID, announceAddr, authToken)
+	if err != nil {
+		// Clean up auth token
+		fc.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken) //nolint:errcheck
+		return err
+	}
+
+	tpr("miner accepted the deal!")
+
+	// Wait for the transfer to complete (while outputting logs)
+	select {
+	case <-cctx.Context.Done():
+		return cctx.Context.Err()
+	case err = <-pullComplete:
+	}
+	return err
+}
+
+func logStatus(status *filclient.ChannelState, changed bool) (string, error) {
+	switch status.Status {
+	case datatransfer.Failed:
+		return "", fmt.Errorf("data transfer failed: %s", status.Message)
+	case datatransfer.Cancelled:
+		return "", fmt.Errorf("transfer cancelled: %s", status.Message)
+	case datatransfer.Failing:
+		return fmt.Sprintf("data transfer failing... %s", status.Message), nil
+		// I guess we just wait until its failed all the way?
+	case datatransfer.Requested:
+		if changed {
+			return "data transfer requested", nil
+		}
+		//fmt.Println("transfer is requested, hasnt started yet")
+		// probably okay
+	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing:
+		if changed {
+			return "current state: " + status.StatusStr, nil
+		}
+	case datatransfer.Completed:
+		return "transfer complete!", nil
+	case datatransfer.Ongoing:
+		return fmt.Sprintf("transfer progress: %d", status.Sent), nil
+	default:
+		return fmt.Sprintf("Unexpected data transfer state: %d (msg = %s)", status.Status, status.Message), nil
+	}
+	return "", nil
+}
+
+// keepConnection watches the connection to the miner, reconnecting if it goes
+// down
+func keepConnection(ctx context.Context, fc *filclient.FilClient, host host.Host, maddr address.Address, tpr func(s string, args ...interface{})) {
+	pid, err := fc.ConnectToMiner(ctx, maddr)
+	if err != nil {
+		tpr("Unable to make initial connection to storage provider %s: %s", maddr, err)
+		return
+	}
+
+	tpr("Watching connection to storage provider %s with peer ID %s", maddr, pid)
+	cw := connWatcher{
+		pid:          pid,
+		disconnected: make(chan struct{}, 1),
+		reconnect: func() {
+			tpr("Connection to storage provider %s disconnected. Reconnecting...", maddr)
+			_, err := fc.ConnectToMiner(ctx, maddr)
+			if err == nil {
+				tpr("Reconnected to storage provider %s. Waiting for storage provider to restart transfer...", maddr)
+			} else {
+				tpr("Failed to reconnect to storage provider %s: %s", maddr, err)
+			}
+		},
+	}
+	host.Network().Notify(&cw)
+}
+
+type connWatcher struct {
+	pid          peer.ID
+	reconnect    func()
+	disconnected chan struct{}
+}
+
+// Disconnected is called when a connection breaks
+func (c *connWatcher) Disconnected(n inet.Network, conn inet.Conn) {
+	if conn.RemotePeer() != c.pid {
+		return
+	}
+
+	select {
+	case c.disconnected <- struct{}{}:
+		go c.processDisconnect()
+	default:
+	}
+}
+
+func (c *connWatcher) processDisconnect() {
+	// Sleep for a few seconds to prevent flapping
+	time.Sleep(5 * time.Second)
+
+	select {
+	case <-c.disconnected:
+		c.reconnect()
+		// Do one more reconnect in case a disconnect happened while we were
+		// reconnecting,
+		go c.processDisconnect()
+	default:
+	}
+}
+
+func (c *connWatcher) Listen(n inet.Network, m multiaddr.Multiaddr)      {}
+func (c *connWatcher) ListenClose(n inet.Network, m multiaddr.Multiaddr) {}
+func (c *connWatcher) Connected(n inet.Network, conn inet.Conn)          {}
+func (c *connWatcher) OpenedStream(n inet.Network, stream inet.Stream)   {}
+func (c *connWatcher) ClosedStream(n inet.Network, stream inet.Stream)   {}
 
 var dealStatusCmd = &cli.Command{
 	Name:      "deal-status",
@@ -205,6 +405,7 @@ var dealStatusCmd = &cli.Command{
 	ArgsUsage: "<proposal cid>",
 	Flags: []cli.Flag{
 		flagMinerRequired,
+		flagDealUUID,
 	},
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
@@ -214,6 +415,11 @@ var dealStatusCmd = &cli.Command{
 		miner, err := parseMiner(cctx)
 		if err != nil {
 			return fmt.Errorf("invalid miner address: %w", err)
+		}
+
+		dealUUID, err := parseDealUUID(cctx)
+		if err != nil {
+			return fmt.Errorf("invalid deal UUID: %w", err)
 		}
 
 		cid, err := cid.Decode(cctx.Args().First())
@@ -232,7 +438,12 @@ var dealStatusCmd = &cli.Command{
 		}
 		defer closer()
 
-		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid)
+		var dealUUIDPtr *uuid.UUID
+		if dealUUID != uuid.Nil {
+			dealUUIDPtr = &dealUUID
+		}
+
+		dealStatus, err := fc.DealStatus(cctx.Context, miner, cid, dealUUIDPtr)
 		if err != nil {
 			return fmt.Errorf("could not get deal state from provider: %w", err)
 		}
