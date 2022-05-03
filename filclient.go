@@ -910,6 +910,8 @@ type ChannelState struct {
 
 	// Queued returns the number of bytes read from the node and queued for sending
 	//Queued uint64
+
+	Stages *datatransfer.ChannelStages
 }
 
 func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
@@ -924,6 +926,7 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 		BaseCid:    st.BaseCID().String(),
 		ChannelID:  st.ChannelID(),
 		TransferID: st.ChannelID().String(),
+		Stages:     st.Stages(),
 		//Vouchers:          st.Vouchers(),
 		//VoucherResults:    st.VoucherResults(),
 		//LastVoucher:       st.LastVoucher(),
