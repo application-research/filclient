@@ -1516,6 +1516,7 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 		case datatransfer.Cancel:
 		case datatransfer.Error:
 			finish(fmt.Errorf("datatransfer error: %s", event.Message))
+			return
 		case datatransfer.CleanupComplete:
 		case datatransfer.NewVoucher:
 		case datatransfer.NewVoucherResult:
@@ -1547,10 +1548,12 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 						})
 						if err != nil {
 							finish(err)
+							return
 						}
 
 						if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
 							finish(fmt.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall))
+							return
 						}
 
 						if err := fc.dataTransfer.SendVoucher(ctx, chanidCopy, &retrievalmarket.DealPayment{
@@ -1559,23 +1562,30 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 							PaymentVoucher: vres.Voucher,
 						}); err != nil {
 							finish(fmt.Errorf("failed to send payment voucher: %w", err))
+							return
 						}
 
 						nonce++
 					} else {
 						finish(fmt.Errorf("the miner requested payment even though this transaction was determined to be zero cost"))
+						return
 					}
 				case retrievalmarket.DealStatusRejected:
 					finish(fmt.Errorf("deal rejected: %s", resType.Message))
+					return
 				case retrievalmarket.DealStatusFundsNeededUnseal, retrievalmarket.DealStatusUnsealing:
 					finish(fmt.Errorf("data is sealed"))
+					return
 				case retrievalmarket.DealStatusCancelled:
 					finish(fmt.Errorf("deal cancelled: %s", resType.Message))
+					return
 				case retrievalmarket.DealStatusErrored:
 					finish(fmt.Errorf("deal errored: %s", resType.Message))
+					return
 				case retrievalmarket.DealStatusCompleted:
 					if allBytesReceived {
 						finish(nil)
+						return
 					}
 					dealComplete = true
 				}
@@ -1587,6 +1597,7 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 		case datatransfer.FinishTransfer:
 			if dealComplete {
 				finish(nil)
+				return
 			}
 			allBytesReceived = true
 		case datatransfer.ResponderCompletes:
