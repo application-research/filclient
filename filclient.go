@@ -1515,6 +1515,7 @@ func (fc *FilClient) RetrieveContextFromPeerWithProgressCallback(
 		case datatransfer.DataSent:
 		case datatransfer.Cancel:
 		case datatransfer.Error:
+			finish(fmt.Errorf("datatransfer error: %s", event.Message))
 		case datatransfer.CleanupComplete:
 		case datatransfer.NewVoucher:
 		case datatransfer.NewVoucherResult:
