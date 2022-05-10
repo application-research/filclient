@@ -540,11 +540,13 @@ var retrieveFileCmd = &cli.Command{
 
 		if cctx.Bool(flagCar.Name) {
 			// Write file as car file
-			file, err := os.Create(output)
+			file, err := os.Create(output + ".car")
 			if err != nil {
 				return err
 			}
 			car.WriteCar(cctx.Context, dservOffline, []cid.Cid{c}, file)
+
+			fmt.Println("Saved .car output to", output+".car")
 		} else {
 			// Otherwise write file as UnixFS File
 			ufsFile, err := unixfile.NewUnixfsFile(cctx.Context, dservOffline, dnode)
@@ -552,12 +554,12 @@ var retrieveFileCmd = &cli.Command{
 				return err
 			}
 
-			if err := files.WriteTo(ufsFile, output+".car"); err != nil {
+			if err := files.WriteTo(ufsFile, output); err != nil {
 				return err
 			}
-		}
 
-		fmt.Println("Saved output to", output)
+			fmt.Println("Saved output to", output)
+		}
 
 		return nil
 	},
