@@ -20,7 +20,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
-	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p"
@@ -165,10 +164,10 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	//return nil, err
 	//}
 
-	dsldb, err := levelds.NewDatastore(datastorePath(cfgdir), nil)
-	if err != nil {
-		return nil, err
-	}
+	//dsldb, err := levelds.NewDatastore(datastorePath(cfgdir), nil)
+	//if err != nil {
+	//return nil, err
+	//}
 
 	dht, err := dht.New(
 		ctx,
@@ -177,7 +176,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		dht.QueryFilter(dht.PublicQueryFilter),
 		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
 		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
-		dht.Datastore(dsldb),
+		dht.Datastore(ds),
 		dht.RoutingTablePeerDiversityFilter(dht.NewRTPeerDiversityFilter(h, 2, 3)),
 	)
 	if err != nil {
@@ -197,7 +196,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		Host:       h,
 		Blockstore: bs,
 		DHT:        dht,
-		Datastore:  dsldb,
+		Datastore:  ds,
 		Bitswap:    bswap.(*bitswap.Bitswap),
 		Wallet:     wallet,
 	}, nil
