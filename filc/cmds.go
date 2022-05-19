@@ -233,7 +233,7 @@ func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner
 	dbid := uint(rand.Uint32())
 	dealUUID := uuid.New()
 	pullComplete := make(chan error)
-	var lastStatus datatransfer.Status
+	//var lastStatus datatransfer.Status
 
 	// Subscribe to pull transfer updates.
 	unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
@@ -241,23 +241,23 @@ func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner
 			return
 		}
 
-		statusChanged := st.Status != lastStatus
-		logstr, err := logStatus(&st, statusChanged)
-		if err != nil {
-			pullComplete <- err
-			return
-		}
+		//statusChanged := st.Status != lastStatus
+		//logstr, err := logStatus(&st, statusChanged)
+		//if err != nil {
+		//pullComplete <- err
+		//return
+		//}
 
-		if logstr != "" {
-			tpr(logstr)
-		}
+		//if logstr != "" {
+		//tpr(logstr)
+		//}
 
 		if st.Status == datatransfer.Completed {
 			tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
 			pullComplete <- nil
 		}
 
-		lastStatus = st.Status
+		//lastStatus = st.Status
 	})
 	if err != nil {
 		return err
