@@ -209,7 +209,7 @@ func makev110Deal(cctx *cli.Context, fc *filclient.FilClient, miner address.Addr
 		}
 		lastStatus = status.Status
 
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 1000)
 	}
 	return nil
 }
