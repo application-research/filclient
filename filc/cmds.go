@@ -82,6 +82,8 @@ var makeDealCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
+		fmt.Println("ddir: ", ddir)
+
 		miner, err := parseMiner(cctx)
 		if err != nil {
 			return err

@@ -105,6 +105,7 @@ func clientFromNode(cctx *cli.Context, nd *Node, dir string) (*filclient.FilClie
 	if err != nil {
 		return nil, nil, err
 	}
+	fmt.Println("default wallet is: %s", addr)
 
 	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir)
 	if err != nil {
@@ -182,6 +183,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	bsnet := bsnet.NewFromIpfsHost(h, dht)
 	bswap := bitswap.New(ctx, bsnet, bstore)
 
+	fmt.Println("cfgdir: ", cfgdir)
 	wallet, err := setupWallet(walletPath(cfgdir))
 	if err != nil {
 		return nil, err
