@@ -45,6 +45,10 @@ var flagCar = &cli.BoolFlag{
 	Name: "car",
 }
 
+var flagDealUUID = &cli.StringFlag{
+	Name: "deal-uuid",
+}
+
 const (
 	NetworkFIL  = "fil"
 	NetworkIPFS = "ipfs"
