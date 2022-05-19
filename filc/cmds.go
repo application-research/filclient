@@ -236,33 +236,33 @@ func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner
 	//var lastStatus datatransfer.Status
 
 	// Subscribe to pull transfer updates.
-	unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
-		if dbid != evtdbid {
-			return
-		}
+	//unsubPullEvts, err := fc.Libp2pTransferMgr.Subscribe(func(evtdbid uint, st filclient.ChannelState) {
+	//if dbid != evtdbid {
+	//return
+	//}
 
-		//statusChanged := st.Status != lastStatus
-		//logstr, err := logStatus(&st, statusChanged)
-		//if err != nil {
-		//pullComplete <- err
-		//return
-		//}
+	////statusChanged := st.Status != lastStatus
+	////logstr, err := logStatus(&st, statusChanged)
+	////if err != nil {
+	////pullComplete <- err
+	////return
+	////}
 
-		//if logstr != "" {
-		//tpr(logstr)
-		//}
+	////if logstr != "" {
+	////tpr(logstr)
+	////}
 
-		if st.Status == datatransfer.Completed {
-			tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
-			pullComplete <- nil
-		}
+	//if st.Status == datatransfer.Completed {
+	//tpr("transfer completed, miner: %s, propcid: %s", miner, propCid)
+	//pullComplete <- nil
+	//}
 
-		//lastStatus = st.Status
-	})
-	if err != nil {
-		return err
-	}
-	defer unsubPullEvts()
+	////lastStatus = st.Status
+	//})
+	//if err != nil {
+	//return err
+	//}
+	//defer unsubPullEvts()
 
 	// Keep the connection alive
 	ctx, cancel := context.WithCancel(cctx.Context)
