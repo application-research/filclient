@@ -11,7 +11,6 @@ import (
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
-	lmdb "github.com/filecoin-project/go-bs-lmdb"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/market"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -20,8 +19,10 @@ import (
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	bstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -153,15 +154,18 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		return nil, err
 	}
 
-	bstore, err := lmdb.Open(&lmdb.Options{
-		Path:   blockstorePath(cfgdir),
-		NoSync: true,
-	})
-	if err != nil {
-		return nil, err
-	}
+	ds := dssync.MutexWrap(datastore.NewMapDatastore())
+	bs := bstore.NewBlockstore(ds)
 
-	ds, err := levelds.NewDatastore(datastorePath(cfgdir), nil)
+	//bstore, err := lmdb.Open(&lmdb.Options{
+	//Path:   blockstorePath(cfgdir),
+	//NoSync: true,
+	//})
+	//if err != nil {
+	//return nil, err
+	//}
+
+	dsldb, err := levelds.NewDatastore(datastorePath(cfgdir), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +177,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		dht.QueryFilter(dht.PublicQueryFilter),
 		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
 		dht.BootstrapPeersFunc(dht.GetDefaultBootstrapPeerAddrInfos),
-		dht.Datastore(ds),
+		dht.Datastore(dsldb),
 		dht.RoutingTablePeerDiversityFilter(dht.NewRTPeerDiversityFilter(h, 2, 3)),
 	)
 	if err != nil {
@@ -181,7 +185,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	}
 
 	bsnet := bsnet.NewFromIpfsHost(h, dht)
-	bswap := bitswap.New(ctx, bsnet, bstore)
+	bswap := bitswap.New(ctx, bsnet, bs)
 
 	fmt.Println("cfgdir: ", cfgdir)
 	wallet, err := setupWallet(walletPath(cfgdir))
@@ -191,9 +195,9 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 
 	return &Node{
 		Host:       h,
-		Blockstore: bstore,
+		Blockstore: bs,
 		DHT:        dht,
-		Datastore:  ds,
+		Datastore:  dsldb,
 		Bitswap:    bswap.(*bitswap.Bitswap),
 		Wallet:     wallet,
 	}, nil
