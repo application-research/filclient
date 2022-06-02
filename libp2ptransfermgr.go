@@ -346,16 +346,17 @@ func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelSt
 	}
 
 	return ChannelState{
-		SelfPeer:   parsePeerID(st.LocalAddr),
-		RemotePeer: parsePeerID(remoteAddr),
-		Status:     status,
-		StatusStr:  datatransfer.Statuses[status],
-		Sent:       st.Sent,
-		Received:   st.Received,
-		Message:    st.Message,
-		BaseCid:    st.PayloadCid.String(),
-		ChannelID:  chid,
-		TransferID: st.ID,
+		SelfPeer:     parsePeerID(st.LocalAddr),
+		RemotePeer:   parsePeerID(remoteAddr),
+		Status:       status,
+		StatusStr:    datatransfer.Statuses[status],
+		Sent:         st.Sent,
+		Received:     st.Received,
+		Message:      st.Message,
+		BaseCid:      st.PayloadCid.String(),
+		ChannelID:    chid,
+		TransferID:   st.ID,
+		TransferType: BoostTransfer,
 	}
 }
 
