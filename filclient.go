@@ -879,6 +879,13 @@ func (fc *FilClient) minerOwner(ctx context.Context, miner address.Address) (add
 	return minfo.Owner, nil
 }
 
+type TransferType string
+
+const (
+	BoostTransfer     TransferType = "boost"
+	GraphsyncTransfer TransferType = "graphsync"
+)
+
 type ChannelState struct {
 	//datatransfer.Channel
 
@@ -924,21 +931,24 @@ type ChannelState struct {
 	//Queued uint64
 
 	Stages *datatransfer.ChannelStages
+
+	TransferType TransferType
 }
 
 func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 	return &ChannelState{
-		SelfPeer:   st.SelfPeer(),
-		RemotePeer: st.OtherPeer(),
-		Status:     st.Status(),
-		StatusStr:  datatransfer.Statuses[st.Status()],
-		Sent:       st.Sent(),
-		Received:   st.Received(),
-		Message:    st.Message(),
-		BaseCid:    st.BaseCID().String(),
-		ChannelID:  st.ChannelID(),
-		TransferID: st.ChannelID().String(),
-		Stages:     st.Stages(),
+		SelfPeer:     st.SelfPeer(),
+		RemotePeer:   st.OtherPeer(),
+		Status:       st.Status(),
+		StatusStr:    datatransfer.Statuses[st.Status()],
+		Sent:         st.Sent(),
+		Received:     st.Received(),
+		Message:      st.Message(),
+		BaseCid:      st.BaseCID().String(),
+		ChannelID:    st.ChannelID(),
+		TransferID:   st.ChannelID().String(),
+		Stages:       st.Stages(),
+		TransferType: GraphsyncTransfer,
 		//Vouchers:          st.Vouchers(),
 		//VoucherResults:    st.VoucherResults(),
 		//LastVoucher:       st.LastVoucher(),
