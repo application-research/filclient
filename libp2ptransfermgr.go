@@ -347,7 +347,7 @@ func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelSt
 
 	return ChannelState{
 		SelfPeer:   parsePeerID(st.LocalAddr),
-		RemotePeer: parsePeerID(st.RemoteAddr),
+		RemotePeer: parsePeerID(remoteAddr),
 		Status:     status,
 		StatusStr:  datatransfer.Statuses[status],
 		Sent:       st.Sent,
