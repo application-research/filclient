@@ -277,7 +277,7 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	}
 
 	// Create a retrieval event publisher
-	retrievalEventPublisher, err := rep.NewEventPublisher()
+	retrievalEventPublisher := rep.NewEventPublisher()
 	if err != nil {
 		return nil, err
 	}
