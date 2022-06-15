@@ -7,11 +7,11 @@ type RetrievalEventPublisher struct {
 	subscriberList []RetrievalSubscriber
 }
 
-func NewEventPublisher() *RetrievalEventPublisher {
+func New() *RetrievalEventPublisher {
 	return &RetrievalEventPublisher{subscriberList: make([]RetrievalSubscriber, 0)}
 }
 
-func (ep *RetrievalEventPublisher) SubscribeToRetrievalEvents(subscriber RetrievalSubscriber) {
+func (ep *RetrievalEventPublisher) Subscribe(subscriber RetrievalSubscriber) {
 	// Lock writes on the subscribers list
 	ep.subscribersLk.Lock()
 	defer ep.subscribersLk.Unlock()
@@ -27,7 +27,7 @@ func (ep *RetrievalEventPublisher) SubscribeToRetrievalEvents(subscriber Retriev
 	ep.subscriberList = append(ep.subscriberList, subscriber)
 }
 
-func (ep *RetrievalEventPublisher) UnsubscribeFromRetrievalEvents(subscriber RetrievalSubscriber) {
+func (ep *RetrievalEventPublisher) Unsubscribe(subscriber RetrievalSubscriber) {
 	// Lock writes on the subscribers list
 	ep.subscribersLk.Lock()
 	defer ep.subscribersLk.Unlock()
@@ -43,7 +43,7 @@ func (ep *RetrievalEventPublisher) UnsubscribeFromRetrievalEvents(subscriber Ret
 	}
 }
 
-func (ep *RetrievalEventPublisher) PublishRetrievalEvent(event RetrievalEvent) {
+func (ep *RetrievalEventPublisher) Publish(event RetrievalEvent) {
 	go func() {
 		// Lock reads on the subscriber list
 		ep.subscribersLk.RLock()
