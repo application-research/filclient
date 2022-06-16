@@ -18,7 +18,7 @@ func (ep *RetrievalEventPublisher) Subscribe(subscriber RetrievalSubscriber) {
 
 	for _, subInList := range ep.subscriberList {
 		// Don't add the subscriber again if they're already in the list
-		if subInList == subscriber {
+		if subInList.SubscriberIdentifier() == subscriber.SubscriberIdentifier() {
 			return
 		}
 	}
@@ -35,7 +35,7 @@ func (ep *RetrievalEventPublisher) Unsubscribe(subscriber RetrievalSubscriber) {
 	curLen := len(ep.subscriberList)
 	for i, subInList := range ep.subscriberList {
 		// Remove the subscriber if they're in the list
-		if subInList == subscriber {
+		if subInList.SubscriberIdentifier() == subscriber.SubscriberIdentifier() {
 			ep.subscriberList[i] = ep.subscriberList[curLen-1]
 			ep.subscriberList = ep.subscriberList[:curLen-1]
 			return
@@ -54,4 +54,10 @@ func (ep *RetrievalEventPublisher) Publish(event RetrievalEvent) {
 			subscriber.OnRetrievalEvent(event)
 		}
 	}()
+}
+
+func (ep *RetrievalEventPublisher) NumSubscribers() int {
+	ep.subscribersLk.RLock()
+	defer ep.subscribersLk.RUnlock()
+	return len(ep.subscriberList)
 }

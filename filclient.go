@@ -1753,6 +1753,10 @@ func (fc *FilClient) OnRetrievalEvent(event rep.RetrievalEvent) {
 	log.Debugf("%s %s", event.Code, event.Status)
 }
 
+func (fc *FilClient) SubscriberIdentifier() interface{} {
+	return "filclient/1.0.0"
+}
+
 func (fc *FilClient) SubscribeToRetrievalEvents(subscriber rep.RetrievalSubscriber) {
 	fc.retrievalEventPublisher.Subscribe(subscriber)
 }
