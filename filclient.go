@@ -278,9 +278,6 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 
 	// Create a retrieval event publisher
 	retrievalEventPublisher := rep.New()
-	if err != nil {
-		return nil, err
-	}
 
 	fc := &FilClient{
 		host:                       cfg.Host,
@@ -1749,10 +1746,15 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	}, nil
 }
 
+func (fc *FilClient) SubscribeToRetrievalEvents(subscriber rep.RetrievalSubscriber) {
+	fc.retrievalEventPublisher.Subscribe(subscriber)
+}
+
+// Implement RetrievalSubscriber
 func (fc *FilClient) OnRetrievalEvent(event rep.RetrievalEvent) {
 	log.Debugf("%s %s", event.Code, event.Status)
 }
 
-func (fc *FilClient) SubscribeToRetrievalEvents(subscriber rep.RetrievalSubscriber) {
-	fc.retrievalEventPublisher.Subscribe(subscriber)
+func (fc *FilClient) RetrievalSubscriberId() interface{} {
+	return "filclient"
 }
