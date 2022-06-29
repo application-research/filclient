@@ -10,7 +10,7 @@ type unindexableStruct struct {
 	events []rep.RetrievalEvent
 }
 
-func (us *unindexableStruct) OnRetrievalEvent(evt rep.RetrievalEvent) {
+func (us *unindexableStruct) OnRetrievalEvent(evt rep.RetrievalEvent, state rep.RetrievalState) {
 	us.events = append(us.events, evt)
 }
 

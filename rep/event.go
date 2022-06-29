@@ -3,6 +3,7 @@ package rep
 import (
 	"time"
 
+	"github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -24,10 +25,13 @@ type RetrievalEvent struct {
 	Status string
 }
 
+// TODO: This is moreso retrieval properties than state. If this
+// needs to be stateful in the future, implement as a state machine.
 type RetrievalState struct {
-	Root          cid.Cid
-	Piece         cid.Cid
-	PeerId        peer.ID
-	ClientAddress peer.ID
-	Finished      time.Time
+	PayloadCid          *cid.Cid
+	PieceCid            *cid.Cid
+	StorageProviderId   *peer.ID
+	StorageProviderAddr *address.Address
+	ClientAddress       *peer.ID
+	FinishedTime        *time.Time
 }
