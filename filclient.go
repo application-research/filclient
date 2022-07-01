@@ -1521,6 +1521,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	dealID := proposal.ID
 	allBytesReceived := false
 	dealComplete := false
+	receivedFirstByte := false
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
 		chanidLk.Lock()
@@ -1534,7 +1535,6 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 		silenceEventCode := false
 		eventCodeNotHandled := false
-		receivedFirstByte := false
 
 		switch event.Code {
 		case datatransfer.Open:
