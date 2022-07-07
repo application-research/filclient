@@ -1803,7 +1803,8 @@ func (fc *FilClient) SubscribeToRetrievalEvents(subscriber rep.RetrievalSubscrib
 
 // Implement RetrievalSubscriber
 func (fc *FilClient) OnRetrievalEvent(event rep.RetrievalEvent, state rep.RetrievalState) {
-	log.Debugw("retrieval-event",
+	retirevalLogger := logging.Logger("filclient-retrieval")
+	retirevalLogger.Debugw("retrieval-event",
 		"code", event.Code,
 		"status", event.Status,
 		"storage-provider-id", state.StorageProviderId,
