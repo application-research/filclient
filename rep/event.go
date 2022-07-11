@@ -28,10 +28,10 @@ type RetrievalEvent struct {
 // TODO: This is moreso retrieval properties than state. If this
 // needs to be stateful in the future, implement as a state machine.
 type RetrievalState struct {
-	PayloadCid          *cid.Cid
-	PieceCid            *cid.Cid
-	StorageProviderId   *peer.ID
-	StorageProviderAddr *address.Address
-	ClientAddress       *peer.ID
-	FinishedTime        *time.Time
+	PayloadCid          cid.Cid
+	PieceCid            cid.Cid
+	StorageProviderID   peer.ID
+	StorageProviderAddr address.Address
+	ClientID            peer.ID
+	FinishedTime        time.Time
 }
