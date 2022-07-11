@@ -1321,14 +1321,16 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	))
 	defer span.End()
 
+	retrievalState := rep.RetrievalState{
+		PayloadCid:          pcid,
+		StorageProviderAddr: maddr,
+	}
+
 	s, err := fc.streamToMiner(ctx, maddr, RetrievalQueryProtocol)
 	if err != nil {
 		// publish fail event, log the err
 		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed connecting to miner:", err)}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, rep.RetrievalState{
-			PayloadCid:          &pcid,
-			StorageProviderAddr: &maddr,
-		})
+		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, err
 	}
@@ -1337,10 +1339,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	// We have connected
 	// publish connected event
 	retrievalConnectedEvent := rep.RetrievalEvent{Code: rep.RetrievalEventConnect, Status: "connected to miner"}
-	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, rep.RetrievalState{
-		PayloadCid:          &pcid,
-		StorageProviderAddr: &maddr,
-	})
+	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, retrievalState)
 
 	q := &retrievalmarket.Query{
 		PayloadCID: pcid,
@@ -1350,20 +1349,14 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
 		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed retrieval query ask:", err)}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, rep.RetrievalState{
-			PayloadCid:          &pcid,
-			StorageProviderAddr: &maddr,
-		})
+		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, fmt.Errorf("retrieval query rpc: %w", err)
 	}
 
 	// publish query ask event
 	retrievalQueryAskEvent := rep.RetrievalEvent{Code: rep.RetrievalEventQueryAsk, Status: "retrieval query ask response submitted and received"}
-	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, rep.RetrievalState{
-		PayloadCid:          &pcid,
-		StorageProviderAddr: &maddr,
-	})
+	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
 
 	return &resp, nil
 }
@@ -1374,14 +1367,16 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	))
 	defer span.End()
 
+	retrievalState := rep.RetrievalState{
+		PayloadCid:        pcid,
+		StorageProviderID: minerPeer.ID,
+	}
+
 	s, err := fc.openStreamToPeer(ctx, minerPeer, RetrievalQueryProtocol)
 	if err != nil {
 		// publish fail event, log the err
 		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed connecting to miner:", err)}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, rep.RetrievalState{
-			PayloadCid:        &pcid,
-			StorageProviderId: &minerPeer.ID,
-		})
+		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, err
 	}
@@ -1390,10 +1385,7 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	// We have connected
 	// publish connected event
 	retrievalConnectedEvent := rep.RetrievalEvent{Code: rep.RetrievalEventConnect, Status: "connected to miner"}
-	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, rep.RetrievalState{
-		PayloadCid:        &pcid,
-		StorageProviderId: &minerPeer.ID,
-	})
+	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, retrievalState)
 
 	q := &retrievalmarket.Query{
 		PayloadCID: pcid,
@@ -1403,20 +1395,14 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
 		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed retrieval query ask:", err)}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, rep.RetrievalState{
-			PayloadCid:        &pcid,
-			StorageProviderId: &minerPeer.ID,
-		})
+		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, fmt.Errorf("retrieval query rpc: %w", err)
 	}
 
 	// publish query ask event
 	retrievalQueryAskEvent := rep.RetrievalEvent{Code: rep.RetrievalEventQueryAsk, Status: "retrieval query ask response submitted and received"}
-	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, rep.RetrievalState{
-		PayloadCid:        &pcid,
-		StorageProviderId: &minerPeer.ID,
-	})
+	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
 
 	return &resp, nil
 }
@@ -1565,10 +1551,10 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	receivedFirstByte := false
 
 	retrievalState := rep.RetrievalState{
-		PayloadCid:        &rootCid,
-		PieceCid:          proposal.PieceCID,
-		StorageProviderId: &peerID,
-		ClientAddress:     &chanid.Initiator,
+		PayloadCid:        rootCid,
+		PieceCid:          *proposal.PieceCID,
+		StorageProviderID: peerID,
+		ClientID:          chanid.Initiator,
 	}
 
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
@@ -1766,7 +1752,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 		log.Debugf("data transfer for retrieval complete")
 		finishedTime := time.Now()
-		retrievalState.FinishedTime = &finishedTime
+		retrievalState.FinishedTime = finishedTime
 
 		// Otherwise publish a retrieval event success
 		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventSuccess, Status: "data transfer for retrieval complete"}
@@ -1803,13 +1789,13 @@ func (fc *FilClient) SubscribeToRetrievalEvents(subscriber rep.RetrievalSubscrib
 
 // Implement RetrievalSubscriber
 func (fc *FilClient) OnRetrievalEvent(event rep.RetrievalEvent, state rep.RetrievalState) {
-	retirevalLogger := logging.Logger("filclient-retrieval")
-	retirevalLogger.Debugw("retrieval-event",
+	retrievalLogger := logging.Logger("filclient-retrieval")
+	retrievalLogger.Debugw("retrieval-event",
 		"code", event.Code,
 		"status", event.Status,
-		"storage-provider-id", state.StorageProviderId,
+		"storage-provider-id", state.StorageProviderID,
 		"storage-provider-address", state.StorageProviderAddr,
-		"client-address", state.ClientAddress,
+		"client-address", state.ClientID,
 		"payload-cid", state.PayloadCid,
 		"piece-cid", state.PieceCid,
 		"finished-time", state.FinishedTime,
