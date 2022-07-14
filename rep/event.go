@@ -29,7 +29,7 @@ type RetrievalEvent struct {
 // needs to be stateful in the future, implement as a state machine.
 type RetrievalState struct {
 	PayloadCid          cid.Cid
-	PieceCid            cid.Cid
+	PieceCid            *cid.Cid
 	StorageProviderID   peer.ID
 	StorageProviderAddr address.Address
 	ClientID            peer.ID

@@ -1552,7 +1552,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 	retrievalState := rep.RetrievalState{
 		PayloadCid:        rootCid,
-		PieceCid:          *proposal.PieceCID,
+		PieceCid:          proposal.PieceCID,
 		StorageProviderID: peerID,
 		ClientID:          chanid.Initiator,
 	}
