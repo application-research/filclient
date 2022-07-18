@@ -8,6 +8,13 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
+type EventType string
+
+const (
+	RetrievalQueryEvent  EventType = "query"
+	RetrieveContentEvent EventType = "retrieve"
+)
+
 type RetrievalEventCode string
 
 const (
@@ -21,6 +28,7 @@ const (
 )
 
 type RetrievalEvent struct {
+	Type   EventType
 	Code   RetrievalEventCode
 	Status string
 }
