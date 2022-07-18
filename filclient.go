@@ -1329,7 +1329,11 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	s, err := fc.streamToMiner(ctx, maddr, RetrievalQueryProtocol)
 	if err != nil {
 		// publish fail event, log the err
-		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed connecting to miner:", err)}
+		retrievalEvent := rep.RetrievalEvent{
+			Type:   rep.RetrievalQueryEvent,
+			Code:   rep.RetrievalEventFailure,
+			Status: fmt.Sprint("failed connecting to miner:", err),
+		}
 		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, err
@@ -1338,7 +1342,11 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 
 	// We have connected
 	// publish connected event
-	retrievalConnectedEvent := rep.RetrievalEvent{Code: rep.RetrievalEventConnect, Status: "connected to miner"}
+	retrievalConnectedEvent := rep.RetrievalEvent{
+		Type:   rep.RetrievalQueryEvent,
+		Code:   rep.RetrievalEventConnect,
+		Status: "connected to miner",
+	}
 	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, retrievalState)
 
 	q := &retrievalmarket.Query{
@@ -1348,7 +1356,11 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	var resp retrievalmarket.QueryResponse
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
-		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed retrieval query ask:", err)}
+		retrievalEvent := rep.RetrievalEvent{
+			Type:   rep.RetrievalQueryEvent,
+			Code:   rep.RetrievalEventFailure,
+			Status: fmt.Sprint("failed retrieval query ask:", err),
+		}
 		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, fmt.Errorf("retrieval query rpc: %w", err)
@@ -1375,7 +1387,11 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	s, err := fc.openStreamToPeer(ctx, minerPeer, RetrievalQueryProtocol)
 	if err != nil {
 		// publish fail event, log the err
-		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed connecting to miner:", err)}
+		retrievalEvent := rep.RetrievalEvent{
+			Type:   rep.RetrievalQueryEvent,
+			Code:   rep.RetrievalEventFailure,
+			Status: fmt.Sprint("failed connecting to miner:", err),
+		}
 		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, err
@@ -1384,7 +1400,11 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 
 	// We have connected
 	// publish connected event
-	retrievalConnectedEvent := rep.RetrievalEvent{Code: rep.RetrievalEventConnect, Status: "connected to miner"}
+	retrievalConnectedEvent := rep.RetrievalEvent{
+		Type:   rep.RetrievalQueryEvent,
+		Code:   rep.RetrievalEventConnect,
+		Status: "connected to miner",
+	}
 	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, retrievalState)
 
 	q := &retrievalmarket.Query{
@@ -1394,14 +1414,22 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	var resp retrievalmarket.QueryResponse
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
-		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("failed retrieval query ask:", err)}
+		retrievalEvent := rep.RetrievalEvent{
+			Type:   rep.RetrievalQueryEvent,
+			Code:   rep.RetrievalEventFailure,
+			Status: fmt.Sprint("failed retrieval query ask:", err),
+		}
 		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, fmt.Errorf("retrieval query rpc: %w", err)
 	}
 
 	// publish query ask event
-	retrievalQueryAskEvent := rep.RetrievalEvent{Code: rep.RetrievalEventQueryAsk, Status: "retrieval query ask response submitted and received"}
+	retrievalQueryAskEvent := rep.RetrievalEvent{
+		Type:   rep.RetrievalQueryEvent,
+		Code:   rep.RetrievalEventQueryAsk,
+		Status: "retrieval query ask response submitted and received",
+	}
 	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
 
 	return &resp, nil
@@ -1601,7 +1629,11 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 					log.Info("Deal accepted")
 
 					// publish deal accepted event
-					retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventAccepted, Status: "deal accepted"}
+					retrievalEvent := rep.RetrievalEvent{
+						Type:   rep.RetrieveContentEvent,
+						Code:   rep.RetrievalEventAccepted,
+						Status: "deal accepted",
+					}
 					fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 				// Respond with a payment voucher when funds are requested
@@ -1686,7 +1718,11 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 			// publish first byte event
 			if !receivedFirstByte {
 				receivedFirstByte = true
-				retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFirstByte, Status: "received first byte"}
+				retrievalEvent := rep.RetrievalEvent{
+					Type:   rep.RetrieveContentEvent,
+					Code:   rep.RetrievalEventFirstByte,
+					Status: "received first byte",
+				}
 				fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 			}
 
@@ -1722,7 +1758,11 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	if err != nil {
 		// We could fail before a successful proposal
 		// publish event failure
-		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint("deal proposal failed:", err)}
+		retrievalEvent := rep.RetrievalEvent{
+			Type:   rep.RetrieveContentEvent,
+			Code:   rep.RetrievalEventFailure,
+			Status: fmt.Sprint("deal proposal failed:", err),
+		}
 		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 		return nil, err
@@ -1730,7 +1770,11 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 	// Deal has been proposed
 	// publish deal proposed event
-	retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventProposed, Status: "deal proposal"}
+	retrievalEvent := rep.RetrievalEvent{
+		Type:   rep.RetrieveContentEvent,
+		Code:   rep.RetrievalEventProposed,
+		Status: "deal proposal",
+	}
 	fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 	chanidLk.Lock()
@@ -1744,7 +1788,11 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	case err := <-dtRes:
 		if err != nil {
 			// If there is an error, publish a retrieval event failure
-			retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventFailure, Status: fmt.Sprint(err)}
+			retrievalEvent := rep.RetrievalEvent{
+				Type:   rep.RetrieveContentEvent,
+				Code:   rep.RetrievalEventFailure,
+				Status: fmt.Sprint(err),
+			}
 			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 			return nil, fmt.Errorf("data transfer failed: %w", err)
@@ -1755,7 +1803,11 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		retrievalState.FinishedTime = finishedTime
 
 		// Otherwise publish a retrieval event success
-		retrievalEvent := rep.RetrievalEvent{Code: rep.RetrievalEventSuccess, Status: "data transfer for retrieval complete"}
+		retrievalEvent := rep.RetrievalEvent{
+			Type:   rep.RetrieveContentEvent,
+			Code:   rep.RetrievalEventSuccess,
+			Status: "data transfer for retrieval complete",
+		}
 		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 	case <-ctx.Done():
