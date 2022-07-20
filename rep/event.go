@@ -4,15 +4,18 @@ import (
 	"time"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-type EventType string
+type Phase string
 
 const (
-	RetrievalQueryEvent  EventType = "query"
-	RetrieveContentEvent EventType = "retrieve"
+	// QueryPhase involves a connect, query-ask, success|failure
+	QueryPhase Phase = "query"
+	// RetrievalPhase involves the full data retrieval: connect, proposed, accepted, first-byte-received, success|failure
+	RetrievalPhase Phase = "retrieval"
 )
 
 type RetrievalEventCode string
@@ -28,9 +31,12 @@ const (
 )
 
 type RetrievalEvent struct {
-	Type   EventType
-	Code   RetrievalEventCode
+	Phase Phase
+	Code  RetrievalEventCode
+	// Status will include error messages for RetrievalEventFailure, other events use it to expand the Code description
 	Status string
+	// QueryResponse will be included for a RetrievalEventQueryAsk event
+	QueryResponse *retrievalmarket.QueryResponse
 }
 
 // TODO: This is moreso retrieval properties than state. If this
@@ -42,4 +48,5 @@ type RetrievalState struct {
 	StorageProviderAddr address.Address
 	ClientID            peer.ID
 	FinishedTime        time.Time
+	ReceivedSize        uint64
 }

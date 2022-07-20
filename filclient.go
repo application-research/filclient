@@ -1330,7 +1330,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	if err != nil {
 		// publish fail event, log the err
 		retrievalEvent := rep.RetrievalEvent{
-			Type:   rep.RetrievalQueryEvent,
+			Phase:  rep.QueryPhase,
 			Code:   rep.RetrievalEventFailure,
 			Status: fmt.Sprint("failed connecting to miner:", err),
 		}
@@ -1343,7 +1343,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	// We have connected
 	// publish connected event
 	retrievalConnectedEvent := rep.RetrievalEvent{
-		Type:   rep.RetrievalQueryEvent,
+		Phase:  rep.QueryPhase,
 		Code:   rep.RetrievalEventConnect,
 		Status: "connected to miner",
 	}
@@ -1357,7 +1357,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
 		retrievalEvent := rep.RetrievalEvent{
-			Type:   rep.RetrievalQueryEvent,
+			Phase:  rep.QueryPhase,
 			Code:   rep.RetrievalEventFailure,
 			Status: fmt.Sprint("failed retrieval query ask:", err),
 		}
@@ -1367,7 +1367,12 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	}
 
 	// publish query ask event
-	retrievalQueryAskEvent := rep.RetrievalEvent{Code: rep.RetrievalEventQueryAsk, Status: "retrieval query ask response submitted and received"}
+	retrievalQueryAskEvent := rep.RetrievalEvent{
+		Phase:         rep.QueryPhase,
+		Code:          rep.RetrievalEventQueryAsk,
+		Status:        "retrieval query ask response submitted and received",
+		QueryResponse: &resp,
+	}
 	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
 
 	return &resp, nil
@@ -1388,7 +1393,7 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	if err != nil {
 		// publish fail event, log the err
 		retrievalEvent := rep.RetrievalEvent{
-			Type:   rep.RetrievalQueryEvent,
+			Phase:  rep.QueryPhase,
 			Code:   rep.RetrievalEventFailure,
 			Status: fmt.Sprint("failed connecting to miner:", err),
 		}
@@ -1401,7 +1406,7 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	// We have connected
 	// publish connected event
 	retrievalConnectedEvent := rep.RetrievalEvent{
-		Type:   rep.RetrievalQueryEvent,
+		Phase:  rep.QueryPhase,
 		Code:   rep.RetrievalEventConnect,
 		Status: "connected to miner",
 	}
@@ -1415,7 +1420,7 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
 		retrievalEvent := rep.RetrievalEvent{
-			Type:   rep.RetrievalQueryEvent,
+			Phase:  rep.QueryPhase,
 			Code:   rep.RetrievalEventFailure,
 			Status: fmt.Sprint("failed retrieval query ask:", err),
 		}
@@ -1426,9 +1431,10 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 
 	// publish query ask event
 	retrievalQueryAskEvent := rep.RetrievalEvent{
-		Type:   rep.RetrievalQueryEvent,
-		Code:   rep.RetrievalEventQueryAsk,
-		Status: "retrieval query ask response submitted and received",
+		Phase:         rep.QueryPhase,
+		Code:          rep.RetrievalEventQueryAsk,
+		Status:        "retrieval query ask response submitted and received",
+		QueryResponse: &resp,
 	}
 	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
 
@@ -1538,6 +1544,17 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	startTime := time.Now()
 	totalPayment := abi.NewTokenAmount(0)
 
+	rootCid := proposal.PayloadCID
+	var chanid datatransfer.ChannelID
+	var chanidLk sync.Mutex
+
+	retrievalState := rep.RetrievalState{
+		PayloadCid:        rootCid,
+		PieceCid:          proposal.PieceCID,
+		StorageProviderID: peerID,
+		ClientID:          chanid.Initiator,
+	}
+
 	pchRequired := !proposal.PricePerByte.IsZero() || !proposal.UnsealPrice.IsZero()
 	var pchAddr address.Address
 	var pchLane uint64
@@ -1545,16 +1562,25 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		// Get the payment channel and create a lane for this retrieval
 		pchAddr, err := fc.getPaychWithMinFunds(ctx, minerWallet)
 		if err != nil {
+			retrievalEvent := rep.RetrievalEvent{
+				Phase:  rep.RetrievalPhase,
+				Code:   rep.RetrievalEventFailure,
+				Status: fmt.Sprintf("failed to get payment channel: %s", err.Error()),
+			}
+			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 			return nil, fmt.Errorf("failed to get payment channel: %w", err)
 		}
 		pchLane, err = fc.pchmgr.AllocateLane(ctx, pchAddr)
 		if err != nil {
+			retrievalEvent := rep.RetrievalEvent{
+				Phase:  rep.RetrievalPhase,
+				Code:   rep.RetrievalEventFailure,
+				Status: fmt.Sprintf("failed to allocate lane: %s", err.Error()),
+			}
+			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 			return nil, fmt.Errorf("failed to allocate lane: %w", err)
 		}
 	}
-
-	var chanid datatransfer.ChannelID
-	var chanidLk sync.Mutex
 
 	// Set up incoming events handler
 
@@ -1572,18 +1598,10 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		}
 	}
 
-	rootCid := proposal.PayloadCID
 	dealID := proposal.ID
 	allBytesReceived := false
 	dealComplete := false
 	receivedFirstByte := false
-
-	retrievalState := rep.RetrievalState{
-		PayloadCid:        rootCid,
-		PieceCid:          proposal.PieceCID,
-		StorageProviderID: peerID,
-		ClientID:          chanid.Initiator,
-	}
 
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
@@ -1630,7 +1648,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 					// publish deal accepted event
 					retrievalEvent := rep.RetrievalEvent{
-						Type:   rep.RetrieveContentEvent,
+						Phase:  rep.RetrievalPhase,
 						Code:   rep.RetrievalEventAccepted,
 						Status: "deal accepted",
 					}
@@ -1719,7 +1737,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 			if !receivedFirstByte {
 				receivedFirstByte = true
 				retrievalEvent := rep.RetrievalEvent{
-					Type:   rep.RetrieveContentEvent,
+					Phase:  rep.RetrievalPhase,
 					Code:   rep.RetrievalEventFirstByte,
 					Status: "received first byte",
 				}
@@ -1759,7 +1777,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		// We could fail before a successful proposal
 		// publish event failure
 		retrievalEvent := rep.RetrievalEvent{
-			Type:   rep.RetrieveContentEvent,
+			Phase:  rep.RetrievalPhase,
 			Code:   rep.RetrievalEventFailure,
 			Status: fmt.Sprint("deal proposal failed:", err),
 		}
@@ -1771,7 +1789,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	// Deal has been proposed
 	// publish deal proposed event
 	retrievalEvent := rep.RetrievalEvent{
-		Type:   rep.RetrieveContentEvent,
+		Phase:  rep.RetrievalPhase,
 		Code:   rep.RetrievalEventProposed,
 		Status: "deal proposal",
 	}
@@ -1789,9 +1807,9 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		if err != nil {
 			// If there is an error, publish a retrieval event failure
 			retrievalEvent := rep.RetrievalEvent{
-				Type:   rep.RetrieveContentEvent,
+				Phase:  rep.RetrievalPhase,
 				Code:   rep.RetrievalEventFailure,
-				Status: fmt.Sprint(err),
+				Status: err.Error(),
 			}
 			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
@@ -1801,14 +1819,6 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		log.Debugf("data transfer for retrieval complete")
 		finishedTime := time.Now()
 		retrievalState.FinishedTime = finishedTime
-
-		// Otherwise publish a retrieval event success
-		retrievalEvent := rep.RetrievalEvent{
-			Type:   rep.RetrieveContentEvent,
-			Code:   rep.RetrievalEventSuccess,
-			Status: "data transfer for retrieval complete",
-		}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -1823,6 +1833,16 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 	duration := time.Since(startTime)
 	speed := uint64(float64(state.Received()) / duration.Seconds())
+
+	retrievalState.ReceivedSize = state.Received()
+
+	// Otherwise publish a retrieval event success
+	retrievalEvent = rep.RetrievalEvent{
+		Phase:  rep.RetrievalPhase,
+		Code:   rep.RetrievalEventSuccess,
+		Status: "data transfer for retrieval complete",
+	}
+	fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
 
 	return &RetrievalStats{
 		Peer:         state.OtherPeer(),
