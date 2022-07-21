@@ -21,8 +21,8 @@ const (
 type RetrievalEventCode string
 
 const (
-	RetrievalEventConnect   RetrievalEventCode = "connect"
-	RetrievalEventQueryAsk  RetrievalEventCode = "query-ask"
+	RetrievalEventConnect   RetrievalEventCode = "connected"
+	RetrievalEventQueryAsk  RetrievalEventCode = "query-asked"
 	RetrievalEventProposed  RetrievalEventCode = "proposed"
 	RetrievalEventAccepted  RetrievalEventCode = "accepted"
 	RetrievalEventFirstByte RetrievalEventCode = "first-byte-received"
