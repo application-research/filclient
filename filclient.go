@@ -67,6 +67,7 @@ import (
 var Tracer trace.Tracer = otel.Tracer("filclient")
 
 var log = logging.Logger("filclient")
+var retrievalLogger = logging.Logger("filclient-retrieval")
 
 const DealProtocolv110 = "/fil/storage/mk/1.1.0"
 const DealProtocolv120 = "/fil/storage/mk/1.2.0"
@@ -1321,33 +1322,19 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	))
 	defer span.End()
 
-	retrievalState := rep.RetrievalState{
-		PayloadCid:          pcid,
-		StorageProviderAddr: maddr,
-	}
-
 	s, err := fc.streamToMiner(ctx, maddr, RetrievalQueryProtocol)
 	if err != nil {
 		// publish fail event, log the err
-		retrievalEvent := rep.RetrievalEvent{
-			Phase:  rep.QueryPhase,
-			Code:   rep.RetrievalEventFailure,
-			Status: fmt.Sprint("failed connecting to miner:", err),
-		}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
-
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.QueryPhase, pcid, "", maddr,
+				fmt.Sprintf("failed connecting to miner: %s", err.Error())))
 		return nil, err
 	}
 	defer s.Close()
 
 	// We have connected
 	// publish connected event
-	retrievalConnectedEvent := rep.RetrievalEvent{
-		Phase:  rep.QueryPhase,
-		Code:   rep.RetrievalEventConnect,
-		Status: "connected to miner",
-	}
-	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, retrievalState)
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventConnect(rep.QueryPhase, pcid, "", maddr))
 
 	q := &retrievalmarket.Query{
 		PayloadCID: pcid,
@@ -1356,24 +1343,14 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 	var resp retrievalmarket.QueryResponse
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
-		retrievalEvent := rep.RetrievalEvent{
-			Phase:  rep.QueryPhase,
-			Code:   rep.RetrievalEventFailure,
-			Status: fmt.Sprint("failed retrieval query ask:", err),
-		}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
-
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.QueryPhase, pcid, "", maddr,
+				fmt.Sprintf("failed retrieval query ask: %s", err.Error())))
 		return nil, fmt.Errorf("retrieval query rpc: %w", err)
 	}
 
 	// publish query ask event
-	retrievalQueryAskEvent := rep.RetrievalEvent{
-		Phase:         rep.QueryPhase,
-		Code:          rep.RetrievalEventQueryAsk,
-		Status:        "retrieval query ask response submitted and received",
-		QueryResponse: &resp,
-	}
-	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventQueryAsk(rep.QueryPhase, pcid, "", maddr, resp))
 
 	return &resp, nil
 }
@@ -1384,33 +1361,19 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	))
 	defer span.End()
 
-	retrievalState := rep.RetrievalState{
-		PayloadCid:        pcid,
-		StorageProviderID: minerPeer.ID,
-	}
-
 	s, err := fc.openStreamToPeer(ctx, minerPeer, RetrievalQueryProtocol)
 	if err != nil {
 		// publish fail event, log the err
-		retrievalEvent := rep.RetrievalEvent{
-			Phase:  rep.QueryPhase,
-			Code:   rep.RetrievalEventFailure,
-			Status: fmt.Sprint("failed connecting to miner:", err),
-		}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
-
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.QueryPhase, pcid, minerPeer.ID, address.Undef,
+				fmt.Sprintf("failed connecting to miner: %s", err.Error())))
 		return nil, err
 	}
 	defer s.Close()
 
 	// We have connected
 	// publish connected event
-	retrievalConnectedEvent := rep.RetrievalEvent{
-		Phase:  rep.QueryPhase,
-		Code:   rep.RetrievalEventConnect,
-		Status: "connected to miner",
-	}
-	fc.retrievalEventPublisher.Publish(retrievalConnectedEvent, retrievalState)
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventConnect(rep.QueryPhase, pcid, minerPeer.ID, address.Address{}))
 
 	q := &retrievalmarket.Query{
 		PayloadCID: pcid,
@@ -1419,24 +1382,14 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 	var resp retrievalmarket.QueryResponse
 	if err := doRpc(ctx, s, q, &resp); err != nil {
 		// publish failure event
-		retrievalEvent := rep.RetrievalEvent{
-			Phase:  rep.QueryPhase,
-			Code:   rep.RetrievalEventFailure,
-			Status: fmt.Sprint("failed retrieval query ask:", err),
-		}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
-
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.QueryPhase, pcid, minerPeer.ID, address.Undef,
+				fmt.Sprintf("failed retrieval query ask: %s", err.Error())))
 		return nil, fmt.Errorf("retrieval query rpc: %w", err)
 	}
 
 	// publish query ask event
-	retrievalQueryAskEvent := rep.RetrievalEvent{
-		Phase:         rep.QueryPhase,
-		Code:          rep.RetrievalEventQueryAsk,
-		Status:        "retrieval query ask response submitted and received",
-		QueryResponse: &resp,
-	}
-	fc.retrievalEventPublisher.Publish(retrievalQueryAskEvent, retrievalState)
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventQueryAsk(rep.QueryPhase, pcid, minerPeer.ID, address.Undef, resp))
 
 	return &resp, nil
 }
@@ -1548,13 +1501,6 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	var chanid datatransfer.ChannelID
 	var chanidLk sync.Mutex
 
-	retrievalState := rep.RetrievalState{
-		PayloadCid:        rootCid,
-		PieceCid:          proposal.PieceCID,
-		StorageProviderID: peerID,
-		ClientID:          chanid.Initiator,
-	}
-
 	pchRequired := !proposal.PricePerByte.IsZero() || !proposal.UnsealPrice.IsZero()
 	var pchAddr address.Address
 	var pchLane uint64
@@ -1562,22 +1508,16 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 		// Get the payment channel and create a lane for this retrieval
 		pchAddr, err := fc.getPaychWithMinFunds(ctx, minerWallet)
 		if err != nil {
-			retrievalEvent := rep.RetrievalEvent{
-				Phase:  rep.RetrievalPhase,
-				Code:   rep.RetrievalEventFailure,
-				Status: fmt.Sprintf("failed to get payment channel: %s", err.Error()),
-			}
-			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
+			fc.retrievalEventPublisher.Publish(
+				rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef,
+					fmt.Sprintf("failed to get payment channel: %s", err.Error())))
 			return nil, fmt.Errorf("failed to get payment channel: %w", err)
 		}
 		pchLane, err = fc.pchmgr.AllocateLane(ctx, pchAddr)
 		if err != nil {
-			retrievalEvent := rep.RetrievalEvent{
-				Phase:  rep.RetrievalPhase,
-				Code:   rep.RetrievalEventFailure,
-				Status: fmt.Sprintf("failed to allocate lane: %s", err.Error()),
-			}
-			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
+			fc.retrievalEventPublisher.Publish(
+				rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef,
+					fmt.Sprintf("failed to allocate lane: %s", err.Error())))
 			return nil, fmt.Errorf("failed to allocate lane: %w", err)
 		}
 	}
@@ -1647,12 +1587,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 					log.Info("Deal accepted")
 
 					// publish deal accepted event
-					retrievalEvent := rep.RetrievalEvent{
-						Phase:  rep.RetrievalPhase,
-						Code:   rep.RetrievalEventAccepted,
-						Status: "deal accepted",
-					}
-					fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
+					fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventAccepted(rep.RetrievalPhase, rootCid, peerID, address.Undef))
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded, retrievalmarket.DealStatusFundsNeededLastPayment:
@@ -1736,12 +1671,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 			// publish first byte event
 			if !receivedFirstByte {
 				receivedFirstByte = true
-				retrievalEvent := rep.RetrievalEvent{
-					Phase:  rep.RetrievalPhase,
-					Code:   rep.RetrievalEventFirstByte,
-					Status: "received first byte",
-				}
-				fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
+				fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventFirstByte(rep.RetrievalPhase, rootCid, peerID, address.Undef))
 			}
 
 			progressCallback(state.Received())
@@ -1776,24 +1706,15 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	if err != nil {
 		// We could fail before a successful proposal
 		// publish event failure
-		retrievalEvent := rep.RetrievalEvent{
-			Phase:  rep.RetrievalPhase,
-			Code:   rep.RetrievalEventFailure,
-			Status: fmt.Sprint("deal proposal failed:", err),
-		}
-		fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
-
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef,
+				fmt.Sprintf("deal proposal failed: %s", err.Error())))
 		return nil, err
 	}
 
 	// Deal has been proposed
 	// publish deal proposed event
-	retrievalEvent := rep.RetrievalEvent{
-		Phase:  rep.RetrievalPhase,
-		Code:   rep.RetrievalEventProposed,
-		Status: "deal proposal",
-	}
-	fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventProposed(rep.RetrievalPhase, rootCid, peerID, address.Undef))
 
 	chanidLk.Lock()
 	chanid = newchid
@@ -1806,19 +1727,13 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	case err := <-dtRes:
 		if err != nil {
 			// If there is an error, publish a retrieval event failure
-			retrievalEvent := rep.RetrievalEvent{
-				Phase:  rep.RetrievalPhase,
-				Code:   rep.RetrievalEventFailure,
-				Status: err.Error(),
-			}
-			fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
-
+			fc.retrievalEventPublisher.Publish(
+				rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef,
+					fmt.Sprintf("data transfer failed: %s", err.Error())))
 			return nil, fmt.Errorf("data transfer failed: %w", err)
 		}
 
 		log.Debugf("data transfer for retrieval complete")
-		finishedTime := time.Now()
-		retrievalState.FinishedTime = finishedTime
 
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -1834,15 +1749,8 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	duration := time.Since(startTime)
 	speed := uint64(float64(state.Received()) / duration.Seconds())
 
-	retrievalState.ReceivedSize = state.Received()
-
 	// Otherwise publish a retrieval event success
-	retrievalEvent = rep.RetrievalEvent{
-		Phase:  rep.RetrievalPhase,
-		Code:   rep.RetrievalEventSuccess,
-		Status: "data transfer for retrieval complete",
-	}
-	fc.retrievalEventPublisher.Publish(retrievalEvent, retrievalState)
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventSuccess(rep.RetrievalPhase, rootCid, peerID, address.Undef, state.Received()))
 
 	return &RetrievalStats{
 		Peer:         state.OtherPeer(),
@@ -1860,18 +1768,46 @@ func (fc *FilClient) SubscribeToRetrievalEvents(subscriber rep.RetrievalSubscrib
 }
 
 // Implement RetrievalSubscriber
-func (fc *FilClient) OnRetrievalEvent(event rep.RetrievalEvent, state rep.RetrievalState) {
-	retrievalLogger := logging.Logger("filclient-retrieval")
-	retrievalLogger.Debugw("retrieval-event",
-		"code", event.Code,
-		"status", event.Status,
-		"storage-provider-id", state.StorageProviderID,
-		"storage-provider-address", state.StorageProviderAddr,
-		"client-address", state.ClientID,
-		"payload-cid", state.PayloadCid,
-		"piece-cid", state.PieceCid,
-		"finished-time", state.FinishedTime,
-	)
+func (fc *FilClient) OnRetrievalEvent(event rep.RetrievalEvent) {
+	kv := make([]interface{}, 0)
+	kv = append(kv, "code")
+	kv = append(kv, event.Code())
+	kv = append(kv, "phase")
+	kv = append(kv, event.Phase())
+	kv = append(kv, "payloadCid")
+	kv = append(kv, event.PayloadCid())
+	kv = append(kv, "storageProviderId")
+	kv = append(kv, event.StorageProviderId())
+	kv = append(kv, "storageProviderAddr")
+	kv = append(kv, event.StorageProviderAddr())
+	switch tevent := event.(type) {
+	case rep.RetrievalEventQueryAsk:
+		kv = append(kv, "queryResponse:Status")
+		kv = append(kv, tevent.QueryResponse().Status)
+		kv = append(kv, "queryResponse:PieceCIDFound")
+		kv = append(kv, tevent.QueryResponse().PieceCIDFound)
+		kv = append(kv, "queryResponse:Size")
+		kv = append(kv, tevent.QueryResponse().Size)
+		kv = append(kv, "queryResponse:PaymentAddress")
+		kv = append(kv, tevent.QueryResponse().PaymentAddress)
+		kv = append(kv, "queryResponse:MinPricePerByte")
+		kv = append(kv, tevent.QueryResponse().MinPricePerByte)
+		kv = append(kv, "queryResponse:MaxPaymentInterval")
+		kv = append(kv, tevent.QueryResponse().MaxPaymentInterval)
+		kv = append(kv, "queryResponse:MaxPaymentIntervalIncrease")
+		kv = append(kv, tevent.QueryResponse().MaxPaymentIntervalIncrease)
+		kv = append(kv, "queryResponse:Message")
+		kv = append(kv, tevent.QueryResponse().Message)
+		kv = append(kv, "queryResponse:UnsealPrice")
+		kv = append(kv, tevent.QueryResponse().UnsealPrice)
+	case rep.RetrievalEventFailure:
+		kv = append(kv, "errorMessage")
+		kv = append(kv, tevent.ErrorMessage())
+	case rep.RetrievalEventSuccess:
+		kv = append(kv, "receivedSize")
+		kv = append(kv, tevent.ReceivedSize())
+	}
+	retrievalLogger.Debugw("retrieval-event", kv...)
 }
 
 func (fc *FilClient) RetrievalSubscriberId() interface{} {
