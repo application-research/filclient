@@ -35,7 +35,7 @@ func (ep *RetrievalEventPublisher) Subscribe(subscriber RetrievalSubscriber) Uns
 	return ep.unsubscribeWith(subscriber)
 }
 
-func (ep *RetrievalEventPublisher) Publish(event RetrievalEvent, state RetrievalState) {
+func (ep *RetrievalEventPublisher) Publish(event RetrievalEvent) {
 	go func() {
 		// Lock reads on the subscriber list
 		ep.subscribersLk.RLock()
@@ -43,7 +43,7 @@ func (ep *RetrievalEventPublisher) Publish(event RetrievalEvent, state Retrieval
 
 		// Execute the subscriber function for each subscriber
 		for _, subscriber := range ep.subscriberList {
-			subscriber.OnRetrievalEvent(event, state)
+			subscriber.OnRetrievalEvent(event)
 		}
 	}()
 }
