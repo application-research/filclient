@@ -12,7 +12,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
-	"github.com/filecoin-project/lotus/chain/actors/builtin/market"
+	"github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
