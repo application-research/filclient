@@ -346,6 +346,8 @@ func TestGetDealStatus(t *testing.T) {
 
 }
 
+const TEST_CAR_FILE string = "/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download"
+
 func TestGeneratePieceCommitmentFFI(t *testing.T) {
 	bs := initBlockstore(t)
 	//ds := initDatastore(t)
@@ -356,7 +358,7 @@ func TestGeneratePieceCommitmentFFI(t *testing.T) {
 		failed to verify CommP: commP mismatch, expected=baga6ea4seaqbcseenju34x57zfdjhs3qvrgvl5qltd5w7yt4srur73s5jduikpy, actual=baga6ea4seaqashs3x4fqfddnok4gcri23jfhkjn45ox5uer2z4ddwhuruknmigq	{"app_version": "v0.1.7-dirty"}
 	*/
 
-	fi, err := os.Open("/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download")
+	fi, err := os.Open(TEST_CAR_FILE)
 	if err != nil {
 		t.Error(err)
 	}
@@ -386,7 +388,7 @@ func TestGeneratePieceCommitmentFFI_2(t *testing.T) {
 	ctx := context.Background()
 	bs := initBlockstore(t)
 
-	fi, err := os.Open("/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download")
+	fi, err := os.Open(TEST_CAR_FILE)
 	if err != nil {
 		t.Error(err)
 	}
@@ -462,7 +464,7 @@ func GenerateCommP(filepath string) (cidAndSize *writer.DataCIDSize, finalErr er
 
 func TestGeneratePieceCommitmentFFI_3(t *testing.T) {
 
-	cidAndSize, err := GenerateCommP("/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download")
+	cidAndSize, err := GenerateCommP(TEST_CAR_FILE)
 	if err != nil {
 		t.Error(err)
 	}
