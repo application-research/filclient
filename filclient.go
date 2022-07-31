@@ -668,7 +668,6 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 		bstore,
 		[]car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}},
 		car.MaxTraversalLinks(maxTraversalLinks),
-		car.TraverseLinksOnlyOnce(),
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
@@ -700,7 +699,6 @@ func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore 
 		bstore,
 		[]car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}},
 		car.MaxTraversalLinks(maxTraversalLinks),
-		car.TraverseLinksOnlyOnce(),
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
