@@ -428,7 +428,10 @@ func GenerateCommP(filepath string) (cidAndSize *writer.DataCIDSize, finalErr er
 
 	// dump the CARv1 payload of the CARv2 file to the Commp Writer and get back the CommP.
 	w := &writer.Writer{}
-	r := rd.DataReader()
+	r, err := rd.DataReader()
+	if err != nil {
+		return nil, err
+	}
 
 	written, err := io.Copy(w, r)
 	if err != nil {
