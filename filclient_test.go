@@ -1,6 +1,7 @@
 package filclient
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math/rand"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	cborutil "github.com/filecoin-project/go-cbor-util"
+	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
@@ -30,11 +32,14 @@ import (
 	chunk "github.com/ipfs/go-ipfs-chunker"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
+	car "github.com/ipld/go-car"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
+
+	carv2 "github.com/ipld/go-car/v2"
 )
 
 type DummyDataGen struct {
@@ -335,4 +340,132 @@ func initDatastore(t *testing.T) datastore.Batching {
 	}
 
 	return ds
+}
+
+func TestGetDealStatus(t *testing.T) {
+
+}
+
+func TestGeneratePieceCommitmentFFI(t *testing.T) {
+	bs := initBlockstore(t)
+	//ds := initDatastore(t)
+
+	/*
+		2022-07-29T15:59:53.798Z	ERROR	estuary	estuary/replication.go:1606	deal state for deal 651bfbd1-cd87-4639-b02b-f7ebe0431848
+		from miner f02576 is error:
+		failed to verify CommP: commP mismatch, expected=baga6ea4seaqbcseenju34x57zfdjhs3qvrgvl5qltd5w7yt4srur73s5jduikpy, actual=baga6ea4seaqashs3x4fqfddnok4gcri23jfhkjn45ox5uer2z4ddwhuruknmigq	{"app_version": "v0.1.7-dirty"}
+	*/
+
+	fi, err := os.Open("/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download")
+	if err != nil {
+		t.Error(err)
+	}
+
+	bserv := blockservice.New(bs, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	t.Log("importing file...")
+	spl := chunk.DefaultSplitter(fi)
+
+	obj, err := importer.BuildDagFromReader(dserv, spl)
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Logf("File CID: %s", obj.Cid())
+
+	cid, preparedCarSize, unpaddedPieceSize, err := GeneratePieceCommitmentFFI(context.Background(), obj.Cid(), bs)
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("%s, %d, %d", cid, preparedCarSize, unpaddedPieceSize)
+	t.Log("Done.")
+}
+
+func TestGeneratePieceCommitmentFFI_2(t *testing.T) {
+	ctx := context.Background()
+	bs := initBlockstore(t)
+
+	fi, err := os.Open("/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download")
+	if err != nil {
+		t.Error(err)
+	}
+
+	header, err := car.LoadCar(ctx, bs, fi)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(header.Roots) != 1 {
+		// if someone wants this feature, let me know
+		t.Error("cannot handle uploading car files with multiple roots")
+	}
+	rootCID := header.Roots[0]
+
+	cid, preparedCarSize, unpaddedPieceSize, err := GeneratePieceCommitmentFFI(context.Background(), rootCID, bs)
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("%s, %d, %d", cid, preparedCarSize, unpaddedPieceSize)
+	t.Log("Done.")
+}
+
+func GenerateCommP(filepath string) (cidAndSize *writer.DataCIDSize, finalErr error) {
+	rd, err := carv2.OpenReader(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CARv2 reader: %w", err)
+	}
+
+	defer func() {
+		if err := rd.Close(); err != nil {
+			if finalErr == nil {
+				cidAndSize = nil
+				finalErr = fmt.Errorf("failed to close CARv2 reader: %w", err)
+				return
+			}
+		}
+	}()
+
+	// dump the CARv1 payload of the CARv2 file to the Commp Writer and get back the CommP.
+	w := &writer.Writer{}
+	r := rd.DataReader()
+
+	written, err := io.Copy(w, r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write to CommP writer: %w", err)
+	}
+
+	var size int64
+	switch rd.Version {
+	case 2:
+		size = int64(rd.Header.DataSize)
+	case 1:
+		st, err := os.Stat(filepath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat CARv1 file: %w", err)
+		}
+		size = st.Size()
+	}
+
+	if written != size {
+		return nil, fmt.Errorf("number of bytes written to CommP writer %d not equal to the CARv1 payload size %d", written, rd.Header.DataSize)
+	}
+
+	cidAndSize = &writer.DataCIDSize{}
+	*cidAndSize, err = w.Sum()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CommP: %w", err)
+	}
+
+	return cidAndSize, nil
+}
+
+func TestGeneratePieceCommitmentFFI_3(t *testing.T) {
+
+	cidAndSize, err := GenerateCommP("/Users/jay/Documents/car-files/1e347bf0-ce28-47a2-bf15-59472f4f87cf.download")
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("%s", cidAndSize.PieceCID)
+	t.Logf("%s, %d, %d", cidAndSize.PieceCID, cidAndSize.PieceSize, cidAndSize.PieceSize.Unpadded())
 }

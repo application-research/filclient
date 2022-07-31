@@ -54,6 +54,7 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
 	car "github.com/ipld/go-car"
+	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -698,9 +699,8 @@ func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore 
 	selectiveCar := car.NewSelectiveCar(
 		context.Background(),
 		bstore,
-		[]car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}},
+		[]car.Dag{{Root: payloadCid, Selector: selectorparse.CommonSelector_ExploreAllRecursively}},
 		car.MaxTraversalLinks(maxTraversalLinks),
-		car.TraverseLinksOnlyOnce(),
 	)
 	preparedCar, err := selectiveCar.Prepare()
 	if err != nil {
@@ -708,7 +708,9 @@ func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore 
 	}
 
 	commpWriter := &writer.Writer{}
-	err = preparedCar.Dump(ctx, commpWriter)
+
+	// err = preparedCar.Dump(ctx, commpWriter)
+	err = preparedCar.Write(commpWriter)
 	if err != nil {
 		return cid.Undef, 0, 0, err
 	}
