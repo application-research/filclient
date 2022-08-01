@@ -2,6 +2,10 @@
 
 A standalone client library for interacting with the filecoin storage network
 
+## Building
+```bash
+go build ./filc
+```
 
 ## Features
 
