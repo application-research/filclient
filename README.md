@@ -2,6 +2,19 @@
 
 A standalone client library for interacting with the filecoin storage network
 
+## Usage
+Building the CLI:
+```bash
+make
+cd filc
+go build
+```
+
+Using it as a golang library:
+```bash
+go get github.com/application-research/filclient@latest
+```
+
 
 ## Features
 
