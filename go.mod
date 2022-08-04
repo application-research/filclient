@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/dustin/go-humanize v1.0.0
-	github.com/filecoin-project/boost v1.0.1-0.20220803122004-83601caa68f2
+	github.com/filecoin-project/boost v1.0.1
 	github.com/filecoin-project/go-address v0.0.6
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
