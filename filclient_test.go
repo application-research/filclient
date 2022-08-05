@@ -233,7 +233,6 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 
 	fmt.Printf("Initializing test network...\n")
 
-	kit.EnableLargeSectors(t)
 	kit.QuietMiningLogs()
 	client, miner, ensemble := kit.EnsembleMinimal(t,
 		kit.ThroughRPC(),        // so filclient can talk to it
