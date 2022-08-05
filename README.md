@@ -2,7 +2,7 @@
 
 A standalone client library that enables users to interact with the Filecoin storage network. The types of interactions available are listed below, under "Features". 
 
-This functionality is accomplished by allowing users to interact with the API of any Lotus Node on the Filecoin storage network. One such node is `chain.love`, which is a node hosted by the Outercore Engineering team. 
+This functionality is accomplished by allowing users to interact with the API of any Lotus Node on the Filecoin storage network. One such node is `api.chain.love`, which is a node hosted by the Outercore Engineering team. 
 
 ## Features
 
