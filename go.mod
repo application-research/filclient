@@ -15,7 +15,7 @@ require (
 	github.com/filecoin-project/go-fil-markets v1.23.1
 	github.com/filecoin-project/go-jsonrpc v0.1.5
 	github.com/filecoin-project/go-state-types v0.1.10
-	github.com/filecoin-project/lotus v1.17.0-rc3
+	github.com/filecoin-project/lotus v1.17.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/google/uuid v1.3.0
 	github.com/ipfs/go-bitswap v0.6.0
