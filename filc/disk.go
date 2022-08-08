@@ -155,7 +155,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	bstoreDatastore, err := flatfs.CreateOrOpen(blockstorePath(cfgdir), flatfs.NextToLast(3), false)
 	bstore := blockstore.NewBlockstoreNoPrefix(bstoreDatastore)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("blockstore could not be opened (it may be incompatible after an update - try running %s subcommand to delete the blockstore and try again): %v", clearBlockstoreCmd.Name, err)
 	}
 
 	ds, err := levelds.NewDatastore(datastorePath(cfgdir), nil)
