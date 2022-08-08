@@ -6,7 +6,6 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/filecoin-project/boost v1.2.1-0.20220803131342-cfcd4837136d
 	github.com/filecoin-project/go-address v1.0.0
-	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-commp-utils v0.1.3
 	github.com/filecoin-project/go-data-transfer v1.15.2
@@ -200,7 +199,6 @@ require (
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.12 // indirect
 	github.com/koron/go-ssdp v0.0.2 // indirect
-	github.com/ledgerwatch/lmdb-go v1.18.2 // indirect
 	github.com/libp2p/go-buffer-pool v0.0.2 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-eventbus v0.2.1 // indirect

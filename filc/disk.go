@@ -11,7 +11,6 @@ import (
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
-	lmdb "github.com/filecoin-project/go-bs-lmdb"
 	"github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -20,6 +19,7 @@ import (
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	flatfs "github.com/ipfs/go-ds-flatfs"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p"
@@ -152,10 +152,8 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		return nil, err
 	}
 
-	bstore, err := lmdb.Open(&lmdb.Options{
-		Path:   blockstorePath(cfgdir),
-		NoSync: true,
-	})
+	bstoreDatastore, err := flatfs.CreateOrOpen(blockstorePath(cfgdir), flatfs.NextToLast(3), false)
+	bstore := blockstore.NewBlockstoreNoPrefix(bstoreDatastore)
 	if err != nil {
 		return nil, err
 	}
