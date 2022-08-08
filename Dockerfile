@@ -13,7 +13,6 @@ RUN echo ${TAG}
 RUN git clone https://github.com/application-research/filclient . && \
     git pull && \
     git fetch --all --tags && \
-    git checkout ${TAG}
-COPY build .
-COPY extern .
+    git checkout ${TAG} && \
+    make
 USER 1001
