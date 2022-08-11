@@ -45,6 +45,11 @@ Fast Retrieval: %t
 		state.FastRetrieval,
 	)
 
+	stateProposalLabel, err := state.Proposal.Label.ToString()
+	if err != nil {
+		fmt.Printf("Message: %s\n", state.Message)
+		stateProposalLabel = ""
+	}
 	if state.Proposal != nil {
 		fmt.Printf(`Proposal:
 	Piece CID:               %s
@@ -64,7 +69,7 @@ Fast Retrieval: %t
 			state.Proposal.VerifiedDeal,
 			state.Proposal.Client,
 			state.Proposal.Provider,
-			state.Proposal.Label,
+			stateProposalLabel,
 			state.Proposal.StartEpoch,
 			state.Proposal.EndEpoch,
 			state.Proposal.StoragePricePerEpoch, types.FIL(state.Proposal.StoragePricePerEpoch),
