@@ -450,9 +450,13 @@ func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*networ
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	fc.host.ConnManager().Protect(s.Conn().RemotePeer(), "GetAsk")
+	defer func() {
+		fc.host.ConnManager().Unprotect(s.Conn().RemotePeer(), "GetAsk")
+		s.Close()
+	}()
 
-	areq := &network.AskRequest{maddr}
+	areq := &network.AskRequest{Miner: maddr}
 	var resp network.AskResponse
 
 	// Sending the query ask and reading the response
@@ -590,7 +594,11 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 		return false, fmt.Errorf("opening stream to miner: %w", err)
 	}
 
-	defer s.Close()
+	fc.host.ConnManager().Protect(s.Conn().RemotePeer(), "SendProposalV110")
+	defer func() {
+		fc.host.ConnManager().Unprotect(s.Conn().RemotePeer(), "SendProposalV110")
+		s.Close()
+	}()
 
 	// Send proposal to provider using deal protocol v1.1.0 format
 	var resp network.SignedResponse
@@ -624,7 +632,11 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop ne
 		return false, fmt.Errorf("opening stream to miner: %w", err)
 	}
 
-	defer s.Close()
+	fc.host.ConnManager().Protect(s.Conn().RemotePeer(), "SendProposalV120")
+	defer func() {
+		fc.host.ConnManager().Unprotect(s.Conn().RemotePeer(), "SendProposalV120")
+		s.Close()
+	}()
 
 	// Add the data URL and authorization token to the transfer parameters
 	transferParams, err := json.Marshal(boosttypes.HttpRequest{
@@ -747,7 +759,12 @@ func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, prop
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+
+	fc.host.ConnManager().Protect(s.Conn().RemotePeer(), "DealStatus")
+	defer func() {
+		fc.host.ConnManager().Unprotect(s.Conn().RemotePeer(), "DealStatus")
+		s.Close()
+	}()
 
 	// If the miner only supports deal status protocol v1.1.0,
 	// or we don't have a uuid for the deal
@@ -1340,7 +1357,12 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 				fmt.Sprintf("failed connecting to miner: %s", err.Error())))
 		return nil, err
 	}
-	defer s.Close()
+
+	fc.host.ConnManager().Protect(s.Conn().RemotePeer(), "RetrievalQuery")
+	defer func() {
+		fc.host.ConnManager().Unprotect(s.Conn().RemotePeer(), "RetrievalQuery")
+		s.Close()
+	}()
 
 	// We have connected
 	// publish connected event
@@ -1379,7 +1401,12 @@ func (fc *FilClient) RetrievalQueryToPeer(ctx context.Context, minerPeer peer.Ad
 				fmt.Sprintf("failed connecting to miner: %s", err.Error())))
 		return nil, err
 	}
-	defer s.Close()
+
+	fc.host.ConnManager().Protect(s.Conn().RemotePeer(), "RetrievalQueryToPeer")
+	defer func() {
+		fc.host.ConnManager().Unprotect(s.Conn().RemotePeer(), "RetrievalQueryToPeer")
+		s.Close()
+	}()
 
 	// We have connected
 	// publish connected event
