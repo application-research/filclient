@@ -4,12 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
-	"time"
-
 	"github.com/application-research/filclient/rep"
 	boostcar "github.com/filecoin-project/boost/car"
 	smtypes "github.com/filecoin-project/boost/storagemarket/types"
@@ -35,7 +29,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/builtin"
-	"github.com/filecoin-project/go-state-types/builtin/v8/market"
+	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"github.com/filecoin-project/go-state-types/builtin/v8/paych"
 	"github.com/filecoin-project/lotus/api"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
@@ -62,6 +56,11 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 )
 
 var Tracer trace.Tracer = otel.Tracer("filclient")
@@ -543,7 +542,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		return nil, fmt.Errorf("failed to construct label field: %w", err)
 	}
 
-	proposal := &market.DealProposal{
+	proposal := &marketv8.DealProposal{
 		PieceCID:     commP,
 		PieceSize:    size.Padded(),
 		VerifiedDeal: verified,
@@ -569,7 +568,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		return nil, err
 	}
 
-	sigprop := &market.ClientDealProposal{
+	sigprop := &marketv8.ClientDealProposal{
 		Proposal:        *proposal,
 		ClientSignature: *sig,
 	}
