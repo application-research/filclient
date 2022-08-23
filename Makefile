@@ -9,7 +9,7 @@ GITVERSION=$(shell git describe --always --tag --dirty)
 unexport GOFLAGS
 
 CLEAN:=
-BINS:=
+BINS:=filctl
 
 GOFLAGS:=
 
@@ -65,14 +65,14 @@ deps: $(BUILD_DEPS)
 filclient:
 	go build
 
-.PHONY: filc
-filc: filclient
-	make -C filc
+.PHONY: filctl
+filctl: filclient
+	go build ./cmd/filctl
 
 .PHONY: clean
 clean:
 	rm -rf $(CLEAN) $(BINS)
-	make -C filc clean
+	make -C cmd/filctl clean
 
 .PHONY: dist-clean
 dist-clean:

@@ -215,8 +215,8 @@ func makev110Deal(cctx *cli.Context, fc *filclient.FilClient, miner address.Addr
 
 func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner address.Address, netprop *network.Proposal, propCid cid.Cid) error {
 	var announceAddr multiaddr.Multiaddr
-	tpr("filc host addr: %s", h.Addrs())
-	tpr("filc host peer: %s", h.ID())
+	tpr("filctl host addr: %s", h.Addrs())
+	tpr("filctl host peer: %s", h.ID())
 	announce := cctx.String("announce")
 	if announce == "" {
 		return fmt.Errorf("must specify announce address to make deals over deal v1.2.0 protocol %s", filclient.DealProtocolv120)
@@ -227,7 +227,7 @@ func makev120Deal(cctx *cli.Context, fc *filclient.FilClient, h host.Host, miner
 	if err != nil {
 		return fmt.Errorf("parsing announce address '%s': %w", announceStr, err)
 	}
-	tpr("filc announce address: %s", announceAddr.String())
+	tpr("filctl announce address: %s", announceAddr.String())
 
 	dbid := uint(rand.Uint32())
 	dealUUID := uuid.New()

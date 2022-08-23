@@ -16,7 +16,7 @@ func init() {
 	}
 }
 
-var log = logging.Logger("filc")
+var log = logging.Logger("filctl")
 
 func main() {
 	logging.SetPrimaryCore(zapcore.NewCore(zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
@@ -30,7 +30,7 @@ func main() {
 		ConsoleSeparator: "  ",
 	}), os.Stdout, zapcore.DebugLevel))
 
-	logging.SetLogLevel("filc", "info")
+	logging.SetLogLevel("filctl", "info")
 
 	defer log.Sync()
 

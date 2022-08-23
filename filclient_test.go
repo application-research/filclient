@@ -272,7 +272,7 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 	// FilClient initialization
 	fmt.Printf("Initializing filclient...\n")
 
-	// give filc the pre-funded wallet from the client
+	// give filctl the pre-funded wallet from the client
 	ki, err := client.WalletExport(cctx.Context, client.DefaultKey.Address)
 	require.NoError(t, err)
 	lr, err := lotusrepo.NewMemory(nil).Lock(lotusrepo.Wallet)
