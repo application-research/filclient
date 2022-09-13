@@ -7,6 +7,7 @@ import (
 
 	"github.com/application-research/filclient/rep"
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,7 @@ func TestEventing(t *testing.T) {
 	pub.Subscribe(sub)
 	pid := peer.NewPeerRecord().PeerID
 	pub.Publish(rep.NewRetrievalEventConnect(rep.QueryPhase, testCid1, pid, address.Undef))
-	pub.Publish(rep.NewRetrievalEventSuccess(rep.RetrievalPhase, testCid1, "", address.TestAddress, 101, 202))
+	pub.Publish(rep.NewRetrievalEventSuccess(rep.RetrievalPhase, testCid1, "", address.TestAddress, 101, 202, time.Millisecond*303, abi.NewTokenAmount(404)))
 
 	evt := <-sub.ping
 	require.Equal(t, rep.QueryPhase, evt.Phase())
@@ -70,6 +71,8 @@ func TestEventing(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, uint64(101), res.ReceivedSize())
 	require.Equal(t, int64(202), res.ReceivedCids())
+	require.Equal(t, time.Millisecond*303, res.Duration())
+	require.Equal(t, abi.NewTokenAmount(404), res.TotalPayment())
 }
 
 func mustCid(cstr string) cid.Cid {

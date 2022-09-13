@@ -1,8 +1,11 @@
 package rep
 
 import (
+	"time"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -128,10 +131,12 @@ type RetrievalEventSuccess struct {
 	storageProviderAddr address.Address
 	receivedSize        uint64
 	receivedCids        int64
+	duration            time.Duration
+	totalPayment        big.Int
 }
 
-func NewRetrievalEventSuccess(phase Phase, payloadCid cid.Cid, storageProviderId peer.ID, storageProviderAddr address.Address, receivedSize uint64, receivedCids int64) RetrievalEventSuccess {
-	return RetrievalEventSuccess{phase, payloadCid, storageProviderId, storageProviderAddr, receivedSize, receivedCids}
+func NewRetrievalEventSuccess(phase Phase, payloadCid cid.Cid, storageProviderId peer.ID, storageProviderAddr address.Address, receivedSize uint64, receivedCids int64, duration time.Duration, totalPayment big.Int) RetrievalEventSuccess {
+	return RetrievalEventSuccess{phase, payloadCid, storageProviderId, storageProviderAddr, receivedSize, receivedCids, duration, totalPayment}
 }
 
 func (r RetrievalEventConnect) Code() Code                            { return ConnectedCode }
@@ -176,6 +181,8 @@ func (r RetrievalEventSuccess) Phase() Phase                         { return r.
 func (r RetrievalEventSuccess) PayloadCid() cid.Cid                  { return r.payloadCid }
 func (r RetrievalEventSuccess) StorageProviderId() peer.ID           { return r.storageProviderId }
 func (r RetrievalEventSuccess) StorageProviderAddr() address.Address { return r.storageProviderAddr }
+func (r RetrievalEventSuccess) Duration() time.Duration              { return r.duration }
+func (r RetrievalEventSuccess) TotalPayment() big.Int                { return r.totalPayment }
 
 // ReceivedSize returns the number of bytes received
 func (r RetrievalEventSuccess) ReceivedSize() uint64 { return r.receivedSize }

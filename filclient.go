@@ -1787,7 +1787,7 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	speed := uint64(float64(state.Received()) / duration.Seconds())
 
 	// Otherwise publish a retrieval event success
-	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventSuccess(rep.RetrievalPhase, rootCid, peerID, address.Undef, state.Received(), state.ReceivedCidsTotal()))
+	fc.retrievalEventPublisher.Publish(rep.NewRetrievalEventSuccess(rep.RetrievalPhase, rootCid, peerID, address.Undef, state.Received(), state.ReceivedCidsTotal(), duration, totalPayment))
 
 	return &RetrievalStats{
 		Peer:         state.OtherPeer(),
