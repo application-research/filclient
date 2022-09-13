@@ -3,6 +3,7 @@ package filclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1774,6 +1775,17 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+
+	// Confirm that we actually ended up with the root block we wanted, failure
+	// here indicates a data transfer error that was not properly reported
+	if has, err := fc.blockstore.Has(ctx, rootCid); err != nil {
+		return nil, fmt.Errorf("could not get query blockstore: %w", err)
+	} else if !has {
+		msg := "data transfer failed: unconfirmed block transfer"
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef, msg))
+		return nil, errors.New(msg)
 	}
 
 	// Compile the retrieval stats
