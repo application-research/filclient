@@ -1,18 +1,19 @@
 package retrievehelper
 
 import (
-	"math/rand"
-
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
+	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
 )
+
+var dealIdGen = shared.NewTimeCounter()
 
 func RetrievalProposalForAsk(ask *retrievalmarket.QueryResponse, c cid.Cid, optionalSelector ipld.Node) (*retrievalmarket.DealProposal, error) {
 
 	if optionalSelector == nil {
-		optionalSelector = shared.AllSelector()
+		optionalSelector = selectorparse.CommonSelector_ExploreAllRecursively
 	}
 
 	params, err := retrievalmarket.NewParamsV1(
@@ -28,7 +29,7 @@ func RetrievalProposalForAsk(ask *retrievalmarket.QueryResponse, c cid.Cid, opti
 	}
 	return &retrievalmarket.DealProposal{
 		PayloadCID: c,
-		ID:         retrievalmarket.DealID(rand.Int63n(1000000) + 100000),
+		ID:         retrievalmarket.DealID(dealIdGen.Next()),
 		Params:     params,
 	}, nil
 }
