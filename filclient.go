@@ -1780,7 +1780,10 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	// Confirm that we actually ended up with the root block we wanted, failure
 	// here indicates a data transfer error that was not properly reported
 	if has, err := fc.blockstore.Has(ctx, rootCid); err != nil {
-		return nil, fmt.Errorf("could not get query blockstore: %w", err)
+		err = fmt.Errorf("could not get query blockstore: %w", err)
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef, err.Error()))
+		return nil, err
 	} else if !has {
 		msg := "data transfer failed: unconfirmed block transfer"
 		fc.retrievalEventPublisher.Publish(
@@ -1792,7 +1795,10 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 
 	state, err := fc.dataTransfer.ChannelState(ctx, chanid)
 	if err != nil {
-		return nil, fmt.Errorf("could not get channel state: %w", err)
+		err = fmt.Errorf("could not get channel state: %w", err)
+		fc.retrievalEventPublisher.Publish(
+			rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef, err.Error()))
+		return nil, err
 	}
 
 	duration := time.Since(startTime)
