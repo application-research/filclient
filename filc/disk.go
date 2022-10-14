@@ -23,10 +23,10 @@ import (
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
-	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	metrics "github.com/libp2p/go-libp2p/core/metrics"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -190,7 +190,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		Blockstore: bstore,
 		DHT:        dht,
 		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
+		Bitswap:    bswap,
 		Wallet:     wallet,
 	}, nil
 }
