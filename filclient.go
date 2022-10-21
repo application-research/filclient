@@ -304,6 +304,10 @@ func NewClientWithConfig(cfg *Config) (*FilClient, error) {
 	return fc, nil
 }
 
+func (fc *FilClient) GetDtMgr() datatransfer.Manager {
+	return fc.dataTransfer
+}
+
 func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 	fc.computePieceComm = pcf
 }
