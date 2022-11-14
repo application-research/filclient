@@ -106,10 +106,7 @@ func clientFromNode(cctx *cli.Context, nd *Node, dir string) (*filclient.FilClie
 		return nil, nil, err
 	}
 
-	// todo: anjor -- does it make sense to hardcode this?
-	throttle := uint(10)
-
-	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir, throttle)
+	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir)
 	if err != nil {
 		return nil, nil, err
 	}

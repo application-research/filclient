@@ -292,8 +292,7 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 	api, closer := initAPI(t, cctx)
 	bs := initBlockstore(t)
 	ds := initDatastore(t)
-	throttle := uint(10)
-	fc, err := NewClient(h, api, wallet, client.DefaultKey.Address, bs, ds, t.TempDir(), throttle)
+	fc, err := NewClient(h, api, wallet, client.DefaultKey.Address, bs, ds, t.TempDir())
 	if err != nil {
 		t.Fatalf("Could not initialize FilClient: %v", err)
 	}
