@@ -11,7 +11,7 @@ import (
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
-	"github.com/filecoin-project/go-state-types/builtin/v8/market"
+	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -25,9 +25,9 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
-	metrics "github.com/libp2p/go-libp2p-core/metrics"
+	"github.com/libp2p/go-libp2p-core/metrics"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 )
 
 type dealData struct {
@@ -106,7 +106,10 @@ func clientFromNode(cctx *cli.Context, nd *Node, dir string) (*filclient.FilClie
 		return nil, nil, err
 	}
 
-	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir)
+	// todo: anjor -- does it make sense to hardcode this?
+	throttle := uint(10)
+
+	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir, throttle)
 	if err != nil {
 		return nil, nil, err
 	}
