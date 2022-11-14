@@ -193,7 +193,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		Blockstore: bstore,
 		DHT:        dht,
 		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
+		Bitswap:    bswap,
 		Wallet:     wallet,
 	}, nil
 }
