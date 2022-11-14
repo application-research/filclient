@@ -131,7 +131,7 @@ type Config struct {
 	Lp2pDTConfig               Lp2pDTConfig
 }
 
-func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, opts ...func(*Config)) (*FilClient, error) {
+func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string, throttle uint, opts ...func(*Config)) (*FilClient, error) {
 	cfg := &Config{
 		Host:       h,
 		Api:        api,
@@ -170,6 +170,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 				// of a transfer, or there is a request for the same payload
 				// soon after
 				BlockInfoCacheManager: boostcar.NewDelayedUnrefBICM(time.Minute),
+				ThrottleLimit:         throttle,
 			},
 			// Wait up to 24 hours for the transfer to complete (including
 			// after a connection bounce) before erroring out the deal
