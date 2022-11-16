@@ -42,7 +42,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
 

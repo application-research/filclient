@@ -1,6 +1,6 @@
 package main
 
-import cli "github.com/urfave/cli/v2"
+import "github.com/urfave/cli/v2"
 
 var flagMiner = &cli.StringFlag{
 	Name:    "miner",

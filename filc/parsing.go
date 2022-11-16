@@ -7,7 +7,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/google/uuid"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 )
 
 // Read a single miner from the CLI, returning address.Undef if none is

@@ -6,7 +6,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mitchellh/go-homedir"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 	"go.uber.org/zap/zapcore"
 )
 
