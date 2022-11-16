@@ -289,14 +289,23 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 	if err != nil {
 		t.Fatalf("Could not gen p2p peer: %v", err)
 	}
-	ensemble.Mocknet().LinkAll()
+	fmt.Printf("Mocknet GenPeer done \n")
+	err = ensemble.Mocknet().LinkAll()
+	if err != nil {
+		t.Fatalf("Could not link all: %v", err)
+	}
+	fmt.Printf("Mocknet LinkAll done \n")
 	api, closer := initAPI(t, cctx)
+	fmt.Printf("initApi done \n")
 	bs := initBlockstore(t)
+	fmt.Printf("initBlockstore done \n")
 	ds := initDatastore(t)
+	fmt.Printf("initDatastore done \n")
 	fc, err := NewClient(h, api, wallet, client.DefaultKey.Address, bs, ds, t.TempDir())
 	if err != nil {
 		t.Fatalf("Could not initialize FilClient: %v", err)
 	}
+	fmt.Printf("FilClient initialised \n")
 
 	time.Sleep(time.Millisecond * 500)
 
