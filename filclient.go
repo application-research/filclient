@@ -1525,7 +1525,47 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	proposal *retrievalmarket.DealProposal,
 	progressCallback func(bytesReceived uint64),
 ) (*RetrievalStats, error) {
+	return fc.retrieveContentFromPeerWithProgressCallback(ctx, peerID, minerWallet, proposal, progressCallback, nil)
+}
 
+type RetrievalResult struct {
+	*RetrievalStats
+	Err error
+}
+
+func (fc *FilClient) RetrieveContentFromPeerAsync(
+	ctx context.Context,
+	peerID peer.ID,
+	minerWallet address.Address,
+	proposal *retrievalmarket.DealProposal,
+) (result <-chan RetrievalResult, onProgress <-chan uint64, gracefulShutdown func()) {
+	gracefulShutdownChan := make(chan struct{}, 1)
+	resultChan := make(chan RetrievalResult, 1)
+	progressChan := make(chan uint64)
+	internalCtx, internalCancel := context.WithCancel(ctx)
+	go func() {
+		defer internalCancel()
+		result, err := fc.retrieveContentFromPeerWithProgressCallback(internalCtx, peerID, minerWallet, proposal, func(bytes uint64) {
+			select {
+			case <-internalCtx.Done():
+			case progressChan <- bytes:
+			}
+		}, gracefulShutdownChan)
+		resultChan <- RetrievalResult{result, err}
+	}()
+	return resultChan, progressChan, func() {
+		gracefulShutdownChan <- struct{}{}
+	}
+}
+
+func (fc *FilClient) retrieveContentFromPeerWithProgressCallback(
+	ctx context.Context,
+	peerID peer.ID,
+	minerWallet address.Address,
+	proposal *retrievalmarket.DealProposal,
+	progressCallback func(bytesReceived uint64),
+	gracefulShutdownRequested <-chan struct{},
+) (*RetrievalStats, error) {
 	if progressCallback == nil {
 		progressCallback = func(bytesReceived uint64) {}
 	}
@@ -1765,20 +1805,27 @@ func (fc *FilClient) RetrieveContentFromPeerWithProgressCallback(
 	defer fc.dataTransfer.CloseDataTransferChannel(ctx, chanid)
 
 	// Wait for the retrieval to finish before exiting the function
-	select {
-	case err := <-dtRes:
-		if err != nil {
-			// If there is an error, publish a retrieval event failure
-			fc.retrievalEventPublisher.Publish(
-				rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef,
-					fmt.Sprintf("data transfer failed: %s", err.Error())))
-			return nil, fmt.Errorf("data transfer failed: %w", err)
+awaitfinished:
+	for {
+		select {
+		case err := <-dtRes:
+			if err != nil {
+				// If there is an error, publish a retrieval event failure
+				fc.retrievalEventPublisher.Publish(
+					rep.NewRetrievalEventFailure(rep.RetrievalPhase, rootCid, peerID, address.Undef,
+						fmt.Sprintf("data transfer failed: %s", err.Error())))
+				return nil, fmt.Errorf("data transfer failed: %w", err)
+			}
+
+			log.Debugf("data transfer for retrieval complete")
+			break awaitfinished
+		case <-gracefulShutdownRequested:
+			go func() {
+				fc.dataTransfer.CloseDataTransferChannel(ctx, chanid)
+			}()
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-
-		log.Debugf("data transfer for retrieval complete")
-
-	case <-ctx.Done():
-		return nil, ctx.Err()
 	}
 
 	// Confirm that we actually ended up with the root block we wanted, failure
