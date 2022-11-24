@@ -170,6 +170,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 				// of a transfer, or there is a request for the same payload
 				// soon after
 				BlockInfoCacheManager: boostcar.NewDelayedUnrefBICM(time.Minute),
+				ThrottleLimit:         uint(10),
 			},
 			// Wait up to 24 hours for the transfer to complete (including
 			// after a connection bounce) before erroring out the deal

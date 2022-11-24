@@ -4,17 +4,17 @@ go 1.18
 
 require (
 	github.com/dustin/go-humanize v1.0.0
-	github.com/filecoin-project/boost v1.5.0
+	github.com/filecoin-project/boost v1.5.1-rc1
 	github.com/filecoin-project/go-address v1.0.0
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-commp-utils v0.1.3
 	github.com/filecoin-project/go-data-transfer v1.15.2
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
-	github.com/filecoin-project/go-fil-markets v1.24.3
+	github.com/filecoin-project/go-fil-markets v1.25.1
 	github.com/filecoin-project/go-jsonrpc v0.1.8
-	github.com/filecoin-project/go-state-types v0.9.1
-	github.com/filecoin-project/lotus v1.18.0-rc3
+	github.com/filecoin-project/go-state-types v0.9.8
+	github.com/filecoin-project/lotus v1.18.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/google/uuid v1.3.0
 	github.com/ipfs/go-bitswap v0.10.2
@@ -32,7 +32,7 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipfs/go-merkledag v0.8.0
 	github.com/ipfs/go-unixfs v0.3.1
-	github.com/ipld/go-car v0.4.1-0.20220707083113-89de8134e58e
+	github.com/ipld/go-car v0.5.0
 	github.com/ipld/go-codec-dagpb v1.4.0
 	github.com/ipld/go-ipld-prime v0.18.0
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1
