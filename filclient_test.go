@@ -238,6 +238,8 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 		kit.ThroughRPC(),        // so filclient can talk to it
 		kit.MockProofs(),        // we don't care about proper sealing/proofs
 		kit.SectorSize(512<<20), // 512MiB sectors
+		kit.GenesisNetworkVersion(15),
+		kit.DisableLibp2p(),
 	)
 	ensemble.InterconnectAll().BeginMining(50 * time.Millisecond)
 
