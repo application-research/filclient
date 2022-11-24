@@ -356,7 +356,6 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 func (fc *FilClient) ConnectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
 	addrInfo, err := fc.minerAddrInfo(ctx, maddr)
 	if err != nil {
-		fmt.Printf("miner addr info failed : %v\n", err)
 		return "", err
 	}
 
@@ -370,12 +369,10 @@ func (fc *FilClient) ConnectToMiner(ctx context.Context, maddr address.Address) 
 func (fc *FilClient) minerAddrInfo(ctx context.Context, maddr address.Address) (*peer.AddrInfo, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		fmt.Printf("state miner info failed: %v\n", err)
 		return nil, NewErrLotusError(err)
 	}
 
 	if minfo.PeerId == nil {
-		fmt.Printf("peer id failed: %v\n", err)
 		return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no peer ID set", maddr))
 	}
 
@@ -383,7 +380,6 @@ func (fc *FilClient) minerAddrInfo(ctx context.Context, maddr address.Address) (
 	for _, mma := range minfo.Multiaddrs {
 		ma, err := multiaddr.NewMultiaddrBytes(mma)
 		if err != nil {
-			fmt.Printf("new multi addr bytes failed: %v\n", err)
 			return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err))
 		}
 		maddrs = append(maddrs, ma)
@@ -392,7 +388,6 @@ func (fc *FilClient) minerAddrInfo(ctx context.Context, maddr address.Address) (
 	// FIXME - lotus-client-proper falls back on the DHT when it has a peerid but no multiaddr
 	// filc should do the same
 	if len(maddrs) == 0 {
-		fmt.Printf("len maddrs = 0")
 		return nil, NewErrMinerConnectionFailed(fmt.Errorf("miner %s has no multiaddrs set on chain", maddr))
 	}
 
@@ -400,7 +395,6 @@ func (fc *FilClient) minerAddrInfo(ctx context.Context, maddr address.Address) (
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
 	}); err != nil {
-		fmt.Printf("connect failed: %v\n", err)
 		return nil, NewErrMinerConnectionFailed(err)
 	}
 
@@ -441,7 +435,6 @@ func (fc *FilClient) connectToPeer(ctx context.Context, addr peer.AddrInfo) erro
 func (fc *FilClient) GetMinerVersion(ctx context.Context, maddr address.Address) (string, error) {
 	pid, err := fc.ConnectToMiner(ctx, maddr)
 	if err != nil {
-		fmt.Printf("Couldn't connect to miner \n")
 		return "", err
 	}
 
