@@ -11,7 +11,7 @@ import (
 
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
-	"github.com/filecoin-project/go-state-types/builtin/v8/market"
+	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -190,7 +190,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 		Blockstore: bstore,
 		DHT:        dht,
 		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
+		Bitswap:    bswap,
 		Wallet:     wallet,
 	}, nil
 }

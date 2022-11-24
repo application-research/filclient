@@ -36,8 +36,8 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/builtin"
-	"github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"github.com/filecoin-project/go-state-types/builtin/v8/paych"
+	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/lotus/api"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -170,6 +170,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 				// of a transfer, or there is a request for the same payload
 				// soon after
 				BlockInfoCacheManager: boostcar.NewDelayedUnrefBICM(time.Minute),
+				ThrottleLimit:         uint(10),
 			},
 			// Wait up to 24 hours for the transfer to complete (including
 			// after a connection bounce) before erroring out the deal

@@ -1,6 +1,6 @@
 SHELL=/usr/bin/env bash
 
-GO_BUILD_IMAGE?=golang:1.16
+GO_BUILD_IMAGE?=golang:1.18
 COMMIT := $(shell git rev-parse --short=8 HEAD)
 
 # GITVERSION is the nearest tag plus number of commits and short form of most recent commit since the tag, if any
