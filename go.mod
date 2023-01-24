@@ -7,7 +7,7 @@ require (
 	github.com/filecoin-project/boost v1.5.1-rc2.0.20221128124133-b5768c8a4220
 	github.com/filecoin-project/go-address v1.0.0
 	github.com/filecoin-project/go-cbor-util v0.0.1
-	github.com/filecoin-project/go-commp-utils v0.1.3
+	github.com/filecoin-project/go-commp-utils v0.1.4
 	github.com/filecoin-project/go-data-transfer v1.15.2
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
