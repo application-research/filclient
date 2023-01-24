@@ -7,5 +7,3 @@ updates:
     target-branch: "master"
     labels:
       - "gomod dependencies"
-    reviewers:
-      - "neelvirdy"
