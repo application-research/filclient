@@ -10,7 +10,7 @@ import (
 
 	"github.com/filecoin-project/boost/transport/httptransport"
 	boosttypes "github.com/filecoin-project/boost/transport/types"
-	datatransfer "github.com/filecoin-project/go-data-transfer"
+	datatransfer "github.com/filecoin-project/go-data-transfer/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
