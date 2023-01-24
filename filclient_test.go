@@ -11,7 +11,7 @@ import (
 	"time"
 
 	cborutil "github.com/filecoin-project/go-cbor-util"
-	datatransfer "github.com/filecoin-project/go-data-transfer/v2"
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/lotus/api"
 	lotusactors "github.com/filecoin-project/lotus/chain/actors"

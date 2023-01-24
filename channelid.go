@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	datatransfer "github.com/filecoin-project/go-data-transfer/v2"
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
