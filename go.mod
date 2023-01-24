@@ -5,9 +5,9 @@ go 1.18
 require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/filecoin-project/boost v1.5.1-rc3
-	github.com/filecoin-project/go-address v1.1.0
+	github.com/filecoin-project/go-address v1.0.0
 	github.com/filecoin-project/go-cbor-util v0.0.1
-	github.com/filecoin-project/go-commp-utils v0.1.4
+	github.com/filecoin-project/go-commp-utils v0.1.3
 	github.com/filecoin-project/go-data-transfer v1.15.3
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
@@ -17,8 +17,8 @@ require (
 	github.com/filecoin-project/lotus v1.18.3-0.20230110150616-2995a530dcc7
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/google/uuid v1.3.0
-	github.com/ipfs/go-bitswap v0.11.0
-	github.com/ipfs/go-blockservice v0.5.0
+	github.com/ipfs/go-bitswap v0.10.2
+	github.com/ipfs/go-blockservice v0.4.0
 	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-flatfs v0.5.1
@@ -30,14 +30,14 @@ require (
 	github.com/ipfs/go-ipfs-files v0.2.0
 	github.com/ipfs/go-ipld-format v0.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipfs/go-merkledag v0.9.0
-	github.com/ipfs/go-unixfs v0.4.2
+	github.com/ipfs/go-merkledag v0.8.1
+	github.com/ipfs/go-unixfs v0.4.1
 	github.com/ipld/go-car v0.5.0
 	github.com/ipld/go-codec-dagpb v1.5.0
 	github.com/ipld/go-ipld-prime v0.19.0
 	github.com/ipld/go-ipld-selector-text-lite v0.0.1
-	github.com/libp2p/go-libp2p v0.24.2
-	github.com/libp2p/go-libp2p-kad-dht v0.20.0
+	github.com/libp2p/go-libp2p v0.23.4
+	github.com/libp2p/go-libp2p-kad-dht v0.18.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.8.0
 	github.com/stretchr/testify v1.8.1
@@ -181,7 +181,7 @@ require (
 	github.com/ipfs/go-peertaskqueue v0.8.0 // indirect
 	github.com/ipfs/go-unixfsnode v1.5.1 // indirect
 	github.com/ipfs/go-verifcid v0.0.2 // indirect
-	github.com/ipfs/interface-go-ipfs-core v0.8.2 // indirect
+	github.com/ipfs/interface-go-ipfs-core v0.7.0 // indirect
 	github.com/ipld/go-car/v2 v2.5.1 // indirect
 	github.com/ipld/go-ipld-adl-hamt v0.0.0-20230103232215-ec18ad32db9b // indirect
 	github.com/ipni/index-provider v0.10.1 // indirect
