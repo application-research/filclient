@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func ChannelIDFromString(id string) (*datatransfer.ChannelID, error) {

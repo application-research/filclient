@@ -42,7 +42,7 @@ import (
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
-	paychmgr "github.com/filecoin-project/lotus/paychmgr"
+	"github.com/filecoin-project/lotus/paychmgr"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
@@ -51,21 +51,21 @@ import (
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	gsnet "github.com/ipfs/go-graphsync/network"
 	"github.com/ipfs/go-graphsync/peerstate"
-	storeutil "github.com/ipfs/go-graphsync/storeutil"
+	"github.com/ipfs/go-graphsync/storeutil"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
-	car "github.com/ipld/go-car"
-	"github.com/libp2p/go-libp2p-core/host"
-	inet "github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/ipld/go-car"
+	"github.com/libp2p/go-libp2p/core/host"
+	inet "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
-var Tracer trace.Tracer = otel.Tracer("filclient")
+var Tracer = otel.Tracer("filclient")
 
 var log = logging.Logger("filclient")
 var retrievalLogger = logging.Logger("filclient-retrieval")
@@ -666,6 +666,7 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop ne
 			Params:   transferParams,
 			Size:     netprop.Piece.RawBlockSize,
 		},
+		RemoveUnsealedCopy: !netprop.FastRetrieval,
 	}
 
 	var resp smtypes.DealResponse
