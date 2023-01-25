@@ -1,6 +1,6 @@
 package main
 
-import cli "github.com/urfave/cli/v2"
+import "github.com/urfave/cli/v2"
 
 var flagMiner = &cli.StringFlag{
 	Name:    "miner",
@@ -26,6 +26,10 @@ var flagMinersRequired = &cli.StringSliceFlag{
 
 var flagVerified = &cli.BoolFlag{
 	Name: "verified",
+}
+
+var removeUnsealed = &cli.BoolFlag{
+	Name: "remove-unsealed",
 }
 
 var flagOutput = &cli.StringFlag{

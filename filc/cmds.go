@@ -124,6 +124,7 @@ var makeDealCmd = &cli.Command{
 		}
 
 		verified := parseVerified(cctx)
+		removeUnsealed := parseRemoveUnsealed(cctx)
 
 		price := ask.Ask.Ask.Price
 		if verified {
@@ -134,7 +135,7 @@ var makeDealCmd = &cli.Command{
 		}
 
 		minPieceSize := ask.Ask.Ask.MinPieceSize
-		proposal, err := fc.MakeDeal(cctx.Context, miner, obj.Cid(), price, minPieceSize, 2880*365, verified)
+		proposal, err := fc.MakeDeal(cctx.Context, miner, obj.Cid(), price, minPieceSize, 2880*365, verified, removeUnsealed)
 		if err != nil {
 			return err
 		}

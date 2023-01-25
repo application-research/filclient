@@ -145,7 +145,7 @@ func TestStorage(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		proposal, err := fc.MakeDeal(ctx, addr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false)
+		proposal, err := fc.MakeDeal(ctx, addr, obj.Cid(), ask.Ask.Ask.Price, 0, 2880*365, false, false)
 		require.NoError(t, err)
 
 		fmt.Printf("Sending proposal\n")

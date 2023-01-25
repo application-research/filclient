@@ -7,7 +7,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/google/uuid"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 )
 
 // Read a single miner from the CLI, returning address.Undef if none is
@@ -51,6 +51,11 @@ func parseMiners(cctx *cli.Context) ([]address.Address, error) {
 // Get whether to use a verified deal or not.
 func parseVerified(cctx *cli.Context) bool {
 	return cctx.Bool(flagVerified.Name)
+}
+
+// Get whether to ask SP to remove unsealed copy.
+func parseRemoveUnsealed(cctx *cli.Context) bool {
+	return cctx.Bool(removeUnsealed.Name)
 }
 
 // Get the destination file to write the output to, erroring if not a valid
