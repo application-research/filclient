@@ -12,7 +12,7 @@ require (
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.26.0
-	github.com/filecoin-project/go-jsonrpc v0.1.8
+	github.com/filecoin-project/go-jsonrpc v0.1.9
 	github.com/filecoin-project/go-state-types v0.9.9
 	github.com/filecoin-project/lotus v1.18.3-0.20230110150616-2995a530dcc7
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
