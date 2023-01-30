@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/filecoin-project/boost v1.5.1-rc4
-	github.com/filecoin-project/go-address v1.0.0
+	github.com/filecoin-project/go-address v1.1.0
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-commp-utils v0.1.4
 	github.com/filecoin-project/go-data-transfer v1.15.3
