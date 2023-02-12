@@ -629,9 +629,90 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 	return false, nil
 }
 
-func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop network.Proposal, dealUUID uuid.UUID, announce multiaddr.Multiaddr, authToken string) (bool, error) {
+type ProposalV120Config struct {
+	dealUUID uuid.UUID
+	transfer smtypes.Transfer
+}
+
+func DefaultProposalV120Config() ProposalV120Config {
+	return ProposalV120Config{
+		dealUUID: uuid.New(),
+		transfer: smtypes.Transfer{},
+	}
+}
+
+type ProposalV120Option func(*ProposalV120Config, network.Proposal) error
+
+func ProposalV120WithDealUUID(dealUUID uuid.UUID) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		cfg.dealUUID = dealUUID
+
+		return nil
+	}
+}
+
+func ProposalV120WithLibp2pTransfer(
+	announceAddr multiaddr.Multiaddr,
+	authToken string,
+	clientID uint,
+) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		transferParams, err := json.Marshal(boosttypes.HttpRequest{
+			URL: "libp2p://" + announceAddr.String(),
+			Headers: map[string]string{
+				"Authorization": httptransport.BasicAuthHeader("", authToken),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal libp2p transfer params: %v", err)
+		}
+
+		cfg.transfer = smtypes.Transfer{
+			Type:     "libp2p",
+			ClientID: fmt.Sprintf("%d", clientID),
+			Params:   transferParams,
+			Size:     netprop.Piece.RawBlockSize,
+		}
+
+		return nil
+	}
+}
+
+func ProposalV120WithTransfer(transfer smtypes.Transfer) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		cfg.transfer = transfer
+
+		return nil
+	}
+}
+
+func (fc *FilClient) SendProposalV120(
+	ctx context.Context,
+	dbid uint,
+	netprop network.Proposal,
+	dealUUID uuid.UUID,
+	announce multiaddr.Multiaddr,
+	authToken string,
+) (bool, error) {
+	return fc.SendProposalV120WithOptions(
+		ctx,
+		netprop,
+		ProposalV120WithDealUUID(dealUUID),
+		ProposalV120WithLibp2pTransfer(announce, authToken, dbid),
+	)
+}
+
+func (fc *FilClient) SendProposalV120WithOptions(ctx context.Context, netprop network.Proposal, options ...ProposalV120Option) (bool, error) {
 	ctx, span := Tracer.Start(ctx, "sendProposalV120")
 	defer span.End()
+
+	// Gen config with options
+	cfg := DefaultProposalV120Config()
+	for _, option := range options {
+		if err := option(&cfg, netprop); err != nil {
+			return false, fmt.Errorf("failed to apply option %T: %v", option, err)
+		}
+	}
 
 	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocolv120)
 	if err != nil {
@@ -644,28 +725,12 @@ func (fc *FilClient) SendProposalV120(ctx context.Context, dbid uint, netprop ne
 		s.Close()
 	}()
 
-	// Add the data URL and authorization token to the transfer parameters
-	transferParams, err := json.Marshal(boosttypes.HttpRequest{
-		URL: "libp2p://" + announce.String(),
-		Headers: map[string]string{
-			"Authorization": httptransport.BasicAuthHeader("", authToken),
-		},
-	})
-	if err != nil {
-		return false, fmt.Errorf("marshalling deal transfer params: %w", err)
-	}
-
 	// Send proposal to storage provider using deal protocol v1.2.0 format
 	params := smtypes.DealParams{
-		DealUUID:           dealUUID,
+		DealUUID:           cfg.dealUUID,
 		ClientDealProposal: *netprop.DealProposal,
 		DealDataRoot:       netprop.Piece.Root,
-		Transfer: smtypes.Transfer{
-			Type:     "libp2p",
-			ClientID: fmt.Sprintf("%d", dbid),
-			Params:   transferParams,
-			Size:     netprop.Piece.RawBlockSize,
-		},
+		Transfer:           cfg.transfer,
 		RemoveUnsealedCopy: !netprop.FastRetrieval,
 	}
 
