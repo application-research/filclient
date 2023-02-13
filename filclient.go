@@ -680,7 +680,6 @@ func ProposalV120WithLibp2pTransfer(
 func ProposalV120WithTransfer(transfer smtypes.Transfer) ProposalV120Option {
 	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
 		cfg.transfer = transfer
-
 		return nil
 	}
 }
