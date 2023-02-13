@@ -646,7 +646,6 @@ type ProposalV120Option func(*ProposalV120Config, network.Proposal) error
 func ProposalV120WithDealUUID(dealUUID uuid.UUID) ProposalV120Option {
 	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
 		cfg.dealUUID = dealUUID
-
 		return nil
 	}
 }
