@@ -741,14 +741,16 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 }
 
 type ProposalV120Config struct {
-	dealUUID uuid.UUID
-	transfer smtypes.Transfer
+	DealUUID         uuid.UUID
+	Transfer         smtypes.Transfer
+	Offline          bool
+	SkipIPNIAnnounce bool
 }
 
 func DefaultProposalV120Config() ProposalV120Config {
 	return ProposalV120Config{
-		dealUUID: uuid.New(),
-		transfer: smtypes.Transfer{},
+		DealUUID: uuid.New(),
+		Transfer: smtypes.Transfer{},
 	}
 }
 
@@ -756,7 +758,7 @@ type ProposalV120Option func(*ProposalV120Config, network.Proposal) error
 
 func ProposalV120WithDealUUID(dealUUID uuid.UUID) ProposalV120Option {
 	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
-		cfg.dealUUID = dealUUID
+		cfg.DealUUID = dealUUID
 		return nil
 	}
 }
@@ -777,7 +779,7 @@ func ProposalV120WithLibp2pTransfer(
 			return fmt.Errorf("failed to marshal libp2p transfer params: %v", err)
 		}
 
-		cfg.transfer = smtypes.Transfer{
+		cfg.Transfer = smtypes.Transfer{
 			Type:     "libp2p",
 			ClientID: fmt.Sprintf("%d", clientID),
 			Params:   transferParams,
@@ -790,7 +792,28 @@ func ProposalV120WithLibp2pTransfer(
 
 func ProposalV120WithTransfer(transfer smtypes.Transfer) ProposalV120Option {
 	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
-		cfg.transfer = transfer
+		cfg.Transfer = transfer
+		return nil
+	}
+}
+
+func ProposalV120WithOffline(offline bool) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		cfg.Offline = offline
+		return nil
+	}
+}
+
+func ProposalV120WithSkipIPNIAnnounce(skip bool) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		cfg.SkipIPNIAnnounce = skip
+		return nil
+	}
+}
+
+func ProposalV120WithConfig(newCfg ProposalV120Config) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		*cfg = newCfg
 		return nil
 	}
 }
@@ -838,11 +861,13 @@ func (fc *FilClient) SendProposalV120WithOptions(ctx context.Context, netprop ne
 
 	// Send proposal to storage provider using deal protocol v1.2.0 format
 	params := smtypes.DealParams{
-		DealUUID:           cfg.dealUUID,
+		DealUUID:           cfg.DealUUID,
 		ClientDealProposal: *netprop.DealProposal,
 		DealDataRoot:       netprop.Piece.Root,
-		Transfer:           cfg.transfer,
+		Transfer:           cfg.Transfer,
 		RemoveUnsealedCopy: !netprop.FastRetrieval,
+		IsOffline:          cfg.Offline,
+		SkipIPNIAnnounce:   cfg.SkipIPNIAnnounce,
 	}
 
 	var resp smtypes.DealResponse
