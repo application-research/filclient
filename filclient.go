@@ -499,37 +499,118 @@ func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.
 	return (*abi.TokenAmount)(&cost), nil
 }
 
-func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, minSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool, removeUnsealed bool) (*network.Proposal, error) {
+type DealPieceInfo struct {
+	// Piece CID
+	cid cid.Cid
+
+	// Piece size
+	size abi.PaddedPieceSize
+
+	// Payload size
+	payloadSize uint64
+}
+
+type DealConfig struct {
+	verified      bool
+	fastRetrieval bool
+	minSize       abi.PaddedPieceSize
+	pieceInfo     DealPieceInfo
+}
+
+func DefaultDealConfig() DealConfig {
+	return DealConfig{
+		verified:      false,
+		fastRetrieval: false,
+		minSize:       0,
+		pieceInfo:     DealPieceInfo{},
+	}
+}
+
+type DealOption func(*DealConfig)
+
+// Whether to use verified FIL.
+func DealWithVerified(verified bool) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.verified = verified
+	}
+}
+
+// Whether to request for the provider to keep an unsealed copy.
+func DealWithFastRetrieval(fastRetrieval bool) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.fastRetrieval = fastRetrieval
+	}
+}
+
+// If the computed piece size is smaller than minSize, minSize will be used
+// instead. Has no effect if DealWithPieceInfo is used.
+func DealWithMinSize(minSize abi.PaddedPieceSize) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.minSize = minSize
+	}
+}
+
+// This can be used to pass a precomputed piece cid and size. If it's not
+// passed, the piece commitment will be automatically calculated.
+func DealWithPieceInfo(pieceInfo DealPieceInfo) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.pieceInfo = pieceInfo
+	}
+}
+
+func (fc *FilClient) MakeDealWithOptions(
+	ctx context.Context,
+	sp address.Address,
+	payload cid.Cid,
+	price types.BigInt,
+	duration abi.ChainEpoch,
+	options ...DealOption,
+) (*network.Proposal, error) {
 	ctx, span := Tracer.Start(ctx, "makeDeal", trace.WithAttributes(
-		attribute.Stringer("miner", miner),
+		attribute.Stringer("sp", sp),
 		attribute.Stringer("price", price),
-		attribute.Int64("minSize", int64(minSize)),
 		attribute.Int64("duration", int64(duration)),
-		attribute.Stringer("cid", data),
+		attribute.Stringer("cid", payload),
 	))
 	defer span.End()
 
-	commP, dataSize, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
-	if err != nil {
-		return nil, err
+	cfg := DefaultDealConfig()
+	for _, option := range options {
+		option(&cfg)
 	}
 
-	if size.Padded() < minSize {
-		padded, err := ZeroPadPieceCommitment(commP, size, minSize.Unpadded())
+	// If no piece CID was provided, calculate it now
+	if cfg.pieceInfo.cid == cid.Undef {
+		pieceCid, payloadSize, unpaddedPieceSize, err := fc.computePieceComm(ctx, payload, fc.blockstore)
 		if err != nil {
 			return nil, err
 		}
 
-		commP = padded
-		size = minSize.Unpadded()
+		if unpaddedPieceSize.Padded() < cfg.minSize {
+			paddedPieceCid, err := ZeroPadPieceCommitment(pieceCid, unpaddedPieceSize, cfg.minSize.Unpadded())
+			if err != nil {
+				return nil, err
+			}
+
+			pieceCid = paddedPieceCid
+			unpaddedPieceSize = cfg.minSize.Unpadded()
+		}
+
+		cfg.pieceInfo = DealPieceInfo{
+			cid:         pieceCid,
+			size:        unpaddedPieceSize.Padded(),
+			payloadSize: payloadSize,
+		}
 	}
+
+	// After this point, cfg.pieceInfo can be considered VALID
 
 	head, err := fc.api.ChainHead(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, size.Padded(), verified, types.EmptyTSK)
+	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.pieceInfo.size, cfg.verified, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
@@ -542,19 +623,19 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 
 	end := dealStart + duration
 
-	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(size.Padded())), price), big.NewInt(1<<30))
+	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.pieceInfo.size)), price), big.NewInt(1<<30))
 
-	label, err := clientutils.LabelField(data)
+	label, err := clientutils.LabelField(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct label field: %w", err)
 	}
 
 	proposal := &market.DealProposal{
-		PieceCID:     commP,
-		PieceSize:    size.Padded(),
-		VerifiedDeal: verified,
+		PieceCID:     cfg.pieceInfo.cid,
+		PieceSize:    cfg.pieceInfo.size,
+		VerifiedDeal: cfg.verified,
 		Client:       fc.ClientAddr,
-		Provider:     miner,
+		Provider:     sp,
 
 		Label: label,
 
@@ -584,11 +665,35 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		DealProposal: sigprop,
 		Piece: &storagemarket.DataRef{
 			TransferType: storagemarket.TTGraphsync,
-			Root:         data,
-			RawBlockSize: dataSize,
+			Root:         payload,
+			RawBlockSize: cfg.pieceInfo.payloadSize,
 		},
-		FastRetrieval: !removeUnsealed,
+		FastRetrieval: cfg.fastRetrieval,
 	}, nil
+}
+
+// Deprecated: MakeDeal will be removed and MakeDealWithOptions will be renamed
+// to MakeDeal.
+func (fc *FilClient) MakeDeal(
+	ctx context.Context,
+	miner address.Address,
+	data cid.Cid,
+	price types.BigInt,
+	minSize abi.PaddedPieceSize,
+	duration abi.ChainEpoch,
+	verified bool,
+	removeUnsealed bool,
+) (*network.Proposal, error) {
+	return fc.MakeDealWithOptions(
+		ctx,
+		miner,
+		data,
+		price,
+		duration,
+		DealWithMinSize(minSize),
+		DealWithVerified(verified),
+		DealWithFastRetrieval(!removeUnsealed),
+	)
 }
 
 func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Proposal, propCid cid.Cid) (bool, error) {
@@ -684,6 +789,8 @@ func ProposalV120WithTransfer(transfer smtypes.Transfer) ProposalV120Option {
 	}
 }
 
+// Deprecated: SendProposalV120 will be removed and SendProposalV120WithOptions
+// will be replaced by SendProposalV120
 func (fc *FilClient) SendProposalV120(
 	ctx context.Context,
 	dbid uint,
