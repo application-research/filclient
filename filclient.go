@@ -511,18 +511,18 @@ type DealPieceInfo struct {
 }
 
 type DealConfig struct {
-	verified      bool
-	fastRetrieval bool
-	minSize       abi.PaddedPieceSize
-	pieceInfo     DealPieceInfo
+	Verified      bool
+	FastRetrieval bool
+	MinSize       abi.PaddedPieceSize
+	PieceInfo     DealPieceInfo
 }
 
 func DefaultDealConfig() DealConfig {
 	return DealConfig{
-		verified:      false,
-		fastRetrieval: false,
-		minSize:       0,
-		pieceInfo:     DealPieceInfo{},
+		Verified:      false,
+		FastRetrieval: false,
+		MinSize:       0,
+		PieceInfo:     DealPieceInfo{},
 	}
 }
 
@@ -531,22 +531,22 @@ type DealOption func(*DealConfig)
 // Whether to use verified FIL.
 func DealWithVerified(verified bool) DealOption {
 	return func(cfg *DealConfig) {
-		cfg.verified = verified
+		cfg.Verified = verified
 	}
 }
 
 // Whether to request for the provider to keep an unsealed copy.
 func DealWithFastRetrieval(fastRetrieval bool) DealOption {
 	return func(cfg *DealConfig) {
-		cfg.fastRetrieval = fastRetrieval
+		cfg.FastRetrieval = fastRetrieval
 	}
 }
 
 // If the computed piece size is smaller than minSize, minSize will be used
-// instead. Has no effect if DealWithPieceInfo is used.
+// instead.
 func DealWithMinSize(minSize abi.PaddedPieceSize) DealOption {
 	return func(cfg *DealConfig) {
-		cfg.minSize = minSize
+		cfg.MinSize = minSize
 	}
 }
 
@@ -554,7 +554,13 @@ func DealWithMinSize(minSize abi.PaddedPieceSize) DealOption {
 // passed, the piece commitment will be automatically calculated.
 func DealWithPieceInfo(pieceInfo DealPieceInfo) DealOption {
 	return func(cfg *DealConfig) {
-		cfg.pieceInfo = pieceInfo
+		cfg.PieceInfo = pieceInfo
+	}
+}
+
+func DealWithConfig(newCfg DealConfig) DealOption {
+	return func(cfg *DealConfig) {
+		*cfg = newCfg
 	}
 }
 
@@ -580,27 +586,27 @@ func (fc *FilClient) MakeDealWithOptions(
 	}
 
 	// If no piece CID was provided, calculate it now
-	if cfg.pieceInfo.Cid == cid.Undef {
+	if cfg.PieceInfo.Cid == cid.Undef {
 		pieceCid, payloadSize, unpaddedPieceSize, err := fc.computePieceComm(ctx, payload, fc.blockstore)
 		if err != nil {
 			return nil, err
 		}
 
-		if unpaddedPieceSize.Padded() < cfg.minSize {
-			paddedPieceCid, err := ZeroPadPieceCommitment(pieceCid, unpaddedPieceSize, cfg.minSize.Unpadded())
-			if err != nil {
-				return nil, err
-			}
-
-			pieceCid = paddedPieceCid
-			unpaddedPieceSize = cfg.minSize.Unpadded()
-		}
-
-		cfg.pieceInfo = DealPieceInfo{
+		cfg.PieceInfo = DealPieceInfo{
 			Cid:         pieceCid,
 			Size:        unpaddedPieceSize.Padded(),
 			PayloadSize: payloadSize,
 		}
+	}
+
+	if cfg.PieceInfo.Size < cfg.MinSize {
+		paddedPieceCid, err := ZeroPadPieceCommitment(cfg.PieceInfo.Cid, cfg.PieceInfo.Size.Unpadded(), cfg.MinSize.Unpadded())
+		if err != nil {
+			return nil, err
+		}
+
+		cfg.PieceInfo.Cid = paddedPieceCid
+		cfg.PieceInfo.Size = cfg.MinSize
 	}
 
 	// After this point, cfg.pieceInfo can be considered VALID
@@ -610,7 +616,7 @@ func (fc *FilClient) MakeDealWithOptions(
 		return nil, err
 	}
 
-	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.pieceInfo.Size, cfg.verified, types.EmptyTSK)
+	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.PieceInfo.Size, cfg.Verified, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +629,7 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	end := dealStart + duration
 
-	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.pieceInfo.Size)), price), big.NewInt(1<<30))
+	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
 
 	label, err := clientutils.LabelField(payload)
 	if err != nil {
@@ -631,9 +637,9 @@ func (fc *FilClient) MakeDealWithOptions(
 	}
 
 	proposal := &market.DealProposal{
-		PieceCID:     cfg.pieceInfo.Cid,
-		PieceSize:    cfg.pieceInfo.Size,
-		VerifiedDeal: cfg.verified,
+		PieceCID:     cfg.PieceInfo.Cid,
+		PieceSize:    cfg.PieceInfo.Size,
+		VerifiedDeal: cfg.Verified,
 		Client:       fc.ClientAddr,
 		Provider:     sp,
 
@@ -666,9 +672,9 @@ func (fc *FilClient) MakeDealWithOptions(
 		Piece: &storagemarket.DataRef{
 			TransferType: storagemarket.TTGraphsync,
 			Root:         payload,
-			RawBlockSize: cfg.pieceInfo.PayloadSize,
+			RawBlockSize: cfg.PieceInfo.PayloadSize,
 		},
-		FastRetrieval: cfg.fastRetrieval,
+		FastRetrieval: cfg.FastRetrieval,
 	}, nil
 }
 
