@@ -501,13 +501,13 @@ func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.
 
 type DealPieceInfo struct {
 	// Piece CID
-	cid cid.Cid
+	Cid cid.Cid
 
 	// Piece size
-	size abi.PaddedPieceSize
+	Size abi.PaddedPieceSize
 
 	// Payload size
-	payloadSize uint64
+	PayloadSize uint64
 }
 
 type DealConfig struct {
@@ -580,7 +580,7 @@ func (fc *FilClient) MakeDealWithOptions(
 	}
 
 	// If no piece CID was provided, calculate it now
-	if cfg.pieceInfo.cid == cid.Undef {
+	if cfg.pieceInfo.Cid == cid.Undef {
 		pieceCid, payloadSize, unpaddedPieceSize, err := fc.computePieceComm(ctx, payload, fc.blockstore)
 		if err != nil {
 			return nil, err
@@ -597,9 +597,9 @@ func (fc *FilClient) MakeDealWithOptions(
 		}
 
 		cfg.pieceInfo = DealPieceInfo{
-			cid:         pieceCid,
-			size:        unpaddedPieceSize.Padded(),
-			payloadSize: payloadSize,
+			Cid:         pieceCid,
+			Size:        unpaddedPieceSize.Padded(),
+			PayloadSize: payloadSize,
 		}
 	}
 
@@ -610,7 +610,7 @@ func (fc *FilClient) MakeDealWithOptions(
 		return nil, err
 	}
 
-	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.pieceInfo.size, cfg.verified, types.EmptyTSK)
+	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.pieceInfo.Size, cfg.verified, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +623,7 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	end := dealStart + duration
 
-	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.pieceInfo.size)), price), big.NewInt(1<<30))
+	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.pieceInfo.Size)), price), big.NewInt(1<<30))
 
 	label, err := clientutils.LabelField(payload)
 	if err != nil {
@@ -631,8 +631,8 @@ func (fc *FilClient) MakeDealWithOptions(
 	}
 
 	proposal := &market.DealProposal{
-		PieceCID:     cfg.pieceInfo.cid,
-		PieceSize:    cfg.pieceInfo.size,
+		PieceCID:     cfg.pieceInfo.Cid,
+		PieceSize:    cfg.pieceInfo.Size,
 		VerifiedDeal: cfg.verified,
 		Client:       fc.ClientAddr,
 		Provider:     sp,
@@ -666,7 +666,7 @@ func (fc *FilClient) MakeDealWithOptions(
 		Piece: &storagemarket.DataRef{
 			TransferType: storagemarket.TTGraphsync,
 			Root:         payload,
-			RawBlockSize: cfg.pieceInfo.payloadSize,
+			RawBlockSize: cfg.pieceInfo.PayloadSize,
 		},
 		FastRetrieval: cfg.fastRetrieval,
 	}, nil
