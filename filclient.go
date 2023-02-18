@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	ipldprime "github.com/ipld/go-ipld-prime"
+	basicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipld/go-ipld-prime/traversal/selector"
+	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	"os"
 	"path/filepath"
 	"strings"
@@ -883,11 +887,18 @@ func (fc *FilClient) SendProposalV120WithOptions(ctx context.Context, netprop ne
 	return false, nil
 }
 
+func allSelector() ipldprime.Node {
+	ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+	return ssb.ExploreRecursive(selector.RecursionLimitNone(),
+		ssb.ExploreAll(ssb.ExploreRecursiveEdge())).
+		Node()
+}
+
 func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	selectiveCar := car.NewSelectiveCar(
 		context.Background(),
 		bstore,
-		[]car.Dag{{Root: payloadCid, Selector: shared.AllSelector()}},
+		[]car.Dag{{Root: payloadCid, Selector: allSelector()}},
 		car.MaxTraversalLinks(maxTraversalLinks),
 		car.TraverseLinksOnlyOnce(),
 	)
