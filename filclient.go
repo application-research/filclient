@@ -38,6 +38,7 @@ import (
 	"github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/go-state-types/builtin/v8/paych"
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
+	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/api"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -515,6 +516,7 @@ type DealConfig struct {
 	FastRetrieval bool
 	MinSize       abi.PaddedPieceSize
 	PieceInfo     DealPieceInfo
+	Signer        DealSigner // May be nil!
 }
 
 func DefaultDealConfig() DealConfig {
@@ -555,6 +557,14 @@ func DealWithMinSize(minSize abi.PaddedPieceSize) DealOption {
 func DealWithPieceInfo(pieceInfo DealPieceInfo) DealOption {
 	return func(cfg *DealConfig) {
 		cfg.PieceInfo = pieceInfo
+	}
+}
+
+type DealSigner func(ctx context.Context, raw []byte) (*crypto.Signature, error)
+
+func DealWithSigner(signer DealSigner) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.Signer = signer
 	}
 }
 
@@ -657,9 +667,24 @@ func (fc *FilClient) MakeDealWithOptions(
 	if err != nil {
 		return nil, err
 	}
-	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, raw, api.MsgMeta{Type: api.MTDealProposal})
-	if err != nil {
-		return nil, err
+
+	// Sign using the custom signer if provided in the options, or if not
+	// provided, use client's wallet to make the signature
+	var sig *crypto.Signature
+	if cfg.Signer != nil {
+		_sig, err := cfg.Signer(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
+
+		sig = _sig
+	} else {
+		_sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, raw, api.MsgMeta{Type: api.MTDealProposal})
+		if err != nil {
+			return nil, err
+		}
+
+		sig = _sig
 	}
 
 	sigprop := &market.ClientDealProposal{
