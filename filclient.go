@@ -499,37 +499,124 @@ func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.
 	return (*abi.TokenAmount)(&cost), nil
 }
 
-func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, minSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool, removeUnsealed bool) (*network.Proposal, error) {
+type DealPieceInfo struct {
+	// Piece CID
+	Cid cid.Cid
+
+	// Piece size
+	Size abi.PaddedPieceSize
+
+	// Payload size
+	PayloadSize uint64
+}
+
+type DealConfig struct {
+	Verified      bool
+	FastRetrieval bool
+	MinSize       abi.PaddedPieceSize
+	PieceInfo     DealPieceInfo
+}
+
+func DefaultDealConfig() DealConfig {
+	return DealConfig{
+		Verified:      false,
+		FastRetrieval: false,
+		MinSize:       0,
+		PieceInfo:     DealPieceInfo{},
+	}
+}
+
+type DealOption func(*DealConfig)
+
+// Whether to use verified FIL.
+func DealWithVerified(verified bool) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.Verified = verified
+	}
+}
+
+// Whether to request for the provider to keep an unsealed copy.
+func DealWithFastRetrieval(fastRetrieval bool) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.FastRetrieval = fastRetrieval
+	}
+}
+
+// If the computed piece size is smaller than minSize, minSize will be used
+// instead.
+func DealWithMinSize(minSize abi.PaddedPieceSize) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.MinSize = minSize
+	}
+}
+
+// This can be used to pass a precomputed piece cid and size. If it's not
+// passed, the piece commitment will be automatically calculated.
+func DealWithPieceInfo(pieceInfo DealPieceInfo) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.PieceInfo = pieceInfo
+	}
+}
+
+func DealWithConfig(newCfg DealConfig) DealOption {
+	return func(cfg *DealConfig) {
+		*cfg = newCfg
+	}
+}
+
+func (fc *FilClient) MakeDealWithOptions(
+	ctx context.Context,
+	sp address.Address,
+	payload cid.Cid,
+	price types.BigInt,
+	duration abi.ChainEpoch,
+	options ...DealOption,
+) (*network.Proposal, error) {
 	ctx, span := Tracer.Start(ctx, "makeDeal", trace.WithAttributes(
-		attribute.Stringer("miner", miner),
+		attribute.Stringer("sp", sp),
 		attribute.Stringer("price", price),
-		attribute.Int64("minSize", int64(minSize)),
 		attribute.Int64("duration", int64(duration)),
-		attribute.Stringer("cid", data),
+		attribute.Stringer("cid", payload),
 	))
 	defer span.End()
 
-	commP, dataSize, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
-	if err != nil {
-		return nil, err
+	cfg := DefaultDealConfig()
+	for _, option := range options {
+		option(&cfg)
 	}
 
-	if size.Padded() < minSize {
-		padded, err := ZeroPadPieceCommitment(commP, size, minSize.Unpadded())
+	// If no piece CID was provided, calculate it now
+	if cfg.PieceInfo.Cid == cid.Undef {
+		pieceCid, payloadSize, unpaddedPieceSize, err := fc.computePieceComm(ctx, payload, fc.blockstore)
 		if err != nil {
 			return nil, err
 		}
 
-		commP = padded
-		size = minSize.Unpadded()
+		cfg.PieceInfo = DealPieceInfo{
+			Cid:         pieceCid,
+			Size:        unpaddedPieceSize.Padded(),
+			PayloadSize: payloadSize,
+		}
 	}
+
+	if cfg.PieceInfo.Size < cfg.MinSize {
+		paddedPieceCid, err := ZeroPadPieceCommitment(cfg.PieceInfo.Cid, cfg.PieceInfo.Size.Unpadded(), cfg.MinSize.Unpadded())
+		if err != nil {
+			return nil, err
+		}
+
+		cfg.PieceInfo.Cid = paddedPieceCid
+		cfg.PieceInfo.Size = cfg.MinSize
+	}
+
+	// After this point, cfg.pieceInfo can be considered VALID
 
 	head, err := fc.api.ChainHead(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, size.Padded(), verified, types.EmptyTSK)
+	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.PieceInfo.Size, cfg.Verified, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
@@ -542,19 +629,19 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 
 	end := dealStart + duration
 
-	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(size.Padded())), price), big.NewInt(1<<30))
+	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
 
-	label, err := clientutils.LabelField(data)
+	label, err := clientutils.LabelField(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct label field: %w", err)
 	}
 
 	proposal := &market.DealProposal{
-		PieceCID:     commP,
-		PieceSize:    size.Padded(),
-		VerifiedDeal: verified,
+		PieceCID:     cfg.PieceInfo.Cid,
+		PieceSize:    cfg.PieceInfo.Size,
+		VerifiedDeal: cfg.Verified,
 		Client:       fc.ClientAddr,
-		Provider:     miner,
+		Provider:     sp,
 
 		Label: label,
 
@@ -584,11 +671,35 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		DealProposal: sigprop,
 		Piece: &storagemarket.DataRef{
 			TransferType: storagemarket.TTGraphsync,
-			Root:         data,
-			RawBlockSize: dataSize,
+			Root:         payload,
+			RawBlockSize: cfg.PieceInfo.PayloadSize,
 		},
-		FastRetrieval: !removeUnsealed,
+		FastRetrieval: cfg.FastRetrieval,
 	}, nil
+}
+
+// Deprecated: MakeDeal will be removed and MakeDealWithOptions will be renamed
+// to MakeDeal.
+func (fc *FilClient) MakeDeal(
+	ctx context.Context,
+	miner address.Address,
+	data cid.Cid,
+	price types.BigInt,
+	minSize abi.PaddedPieceSize,
+	duration abi.ChainEpoch,
+	verified bool,
+	removeUnsealed bool,
+) (*network.Proposal, error) {
+	return fc.MakeDealWithOptions(
+		ctx,
+		miner,
+		data,
+		price,
+		duration,
+		DealWithMinSize(minSize),
+		DealWithVerified(verified),
+		DealWithFastRetrieval(!removeUnsealed),
+	)
 }
 
 func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Proposal, propCid cid.Cid) (bool, error) {
@@ -630,14 +741,16 @@ func (fc *FilClient) SendProposalV110(ctx context.Context, netprop network.Propo
 }
 
 type ProposalV120Config struct {
-	dealUUID uuid.UUID
-	transfer smtypes.Transfer
+	DealUUID         uuid.UUID
+	Transfer         smtypes.Transfer
+	Offline          bool
+	SkipIPNIAnnounce bool
 }
 
 func DefaultProposalV120Config() ProposalV120Config {
 	return ProposalV120Config{
-		dealUUID: uuid.New(),
-		transfer: smtypes.Transfer{},
+		DealUUID: uuid.New(),
+		Transfer: smtypes.Transfer{},
 	}
 }
 
@@ -645,7 +758,7 @@ type ProposalV120Option func(*ProposalV120Config, network.Proposal) error
 
 func ProposalV120WithDealUUID(dealUUID uuid.UUID) ProposalV120Option {
 	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
-		cfg.dealUUID = dealUUID
+		cfg.DealUUID = dealUUID
 		return nil
 	}
 }
@@ -666,7 +779,7 @@ func ProposalV120WithLibp2pTransfer(
 			return fmt.Errorf("failed to marshal libp2p transfer params: %v", err)
 		}
 
-		cfg.transfer = smtypes.Transfer{
+		cfg.Transfer = smtypes.Transfer{
 			Type:     "libp2p",
 			ClientID: fmt.Sprintf("%d", clientID),
 			Params:   transferParams,
@@ -679,11 +792,34 @@ func ProposalV120WithLibp2pTransfer(
 
 func ProposalV120WithTransfer(transfer smtypes.Transfer) ProposalV120Option {
 	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
-		cfg.transfer = transfer
+		cfg.Transfer = transfer
 		return nil
 	}
 }
 
+func ProposalV120WithOffline(offline bool) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		cfg.Offline = offline
+		return nil
+	}
+}
+
+func ProposalV120WithSkipIPNIAnnounce(skip bool) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		cfg.SkipIPNIAnnounce = skip
+		return nil
+	}
+}
+
+func ProposalV120WithConfig(newCfg ProposalV120Config) ProposalV120Option {
+	return func(cfg *ProposalV120Config, netprop network.Proposal) error {
+		*cfg = newCfg
+		return nil
+	}
+}
+
+// Deprecated: SendProposalV120 will be removed and SendProposalV120WithOptions
+// will be replaced by SendProposalV120
 func (fc *FilClient) SendProposalV120(
 	ctx context.Context,
 	dbid uint,
@@ -725,11 +861,13 @@ func (fc *FilClient) SendProposalV120WithOptions(ctx context.Context, netprop ne
 
 	// Send proposal to storage provider using deal protocol v1.2.0 format
 	params := smtypes.DealParams{
-		DealUUID:           cfg.dealUUID,
+		DealUUID:           cfg.DealUUID,
 		ClientDealProposal: *netprop.DealProposal,
 		DealDataRoot:       netprop.Piece.Root,
-		Transfer:           cfg.transfer,
+		Transfer:           cfg.Transfer,
 		RemoveUnsealedCopy: !netprop.FastRetrieval,
+		IsOffline:          cfg.Offline,
+		SkipIPNIAnnounce:   cfg.SkipIPNIAnnounce,
 	}
 
 	var resp smtypes.DealResponse
