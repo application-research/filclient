@@ -574,14 +574,14 @@ func DealWithConfig(newCfg DealConfig) DealOption {
 	}
 }
 
-func (fc *FilClient) MakeDealWithOptions(
+func (fc *FilClient) MakeDealUnsigned(
 	ctx context.Context,
 	sp address.Address,
 	payload cid.Cid,
 	price types.BigInt,
 	duration abi.ChainEpoch,
 	options ...DealOption,
-) (*network.Proposal, error) {
+) (*market.DealProposal, []byte, error) {
 	ctx, span := Tracer.Start(ctx, "makeDeal", trace.WithAttributes(
 		attribute.Stringer("sp", sp),
 		attribute.Stringer("price", price),
@@ -599,7 +599,7 @@ func (fc *FilClient) MakeDealWithOptions(
 	if cfg.PieceInfo.Cid == cid.Undef {
 		pieceCid, payloadSize, unpaddedPieceSize, err := fc.computePieceComm(ctx, payload, fc.blockstore)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		cfg.PieceInfo = DealPieceInfo{
@@ -612,7 +612,7 @@ func (fc *FilClient) MakeDealWithOptions(
 	if cfg.PieceInfo.Size < cfg.MinSize {
 		paddedPieceCid, err := ZeroPadPieceCommitment(cfg.PieceInfo.Cid, cfg.PieceInfo.Size.Unpadded(), cfg.MinSize.Unpadded())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		cfg.PieceInfo.Cid = paddedPieceCid
@@ -623,12 +623,12 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	head, err := fc.api.ChainHead(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.PieceInfo.Size, cfg.Verified, types.EmptyTSK)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// set provider collateral 10% above minimum to avoid fluctuations causing deal failure
@@ -643,7 +643,7 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	label, err := clientutils.LabelField(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct label field: %w", err)
+		return nil, nil, fmt.Errorf("failed to construct label field: %w", err)
 	}
 
 	proposal := &market.DealProposal{
@@ -664,6 +664,28 @@ func (fc *FilClient) MakeDealWithOptions(
 	}
 
 	raw, err := cborutil.Dump(proposal)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return proposal, raw, err
+}
+
+func (fc *FilClient) MakeDealWithOptions(
+	ctx context.Context,
+	sp address.Address,
+	payload cid.Cid,
+	price types.BigInt,
+	duration abi.ChainEpoch,
+	options ...DealOption,
+) (*network.Proposal, error) {
+
+	cfg := DefaultDealConfig()
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	proposal, raw, err := fc.MakeDealUnsigned(ctx, sp, payload, price, duration, DealWithConfig(cfg))
 	if err != nil {
 		return nil, err
 	}
