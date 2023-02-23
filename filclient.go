@@ -517,6 +517,7 @@ type DealConfig struct {
 	MinSize       abi.PaddedPieceSize
 	PieceInfo     DealPieceInfo
 	Signer        DealSigner // May be nil!
+	Label         market.DealLabel
 }
 
 func DefaultDealConfig() DealConfig {
@@ -565,6 +566,12 @@ type DealSigner func(ctx context.Context, raw []byte) (*crypto.Signature, error)
 func DealWithSigner(signer DealSigner) DealOption {
 	return func(cfg *DealConfig) {
 		cfg.Signer = signer
+	}
+}
+
+func DealWithLabel(label market.DealLabel) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.Label = label
 	}
 }
 
@@ -641,9 +648,13 @@ func (fc *FilClient) MakeDealUnsigned(
 
 	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
 
-	label, err := clientutils.LabelField(payload)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to construct label field: %w", err)
+	if cfg.Label.Equals(market.EmptyDealLabel) {
+		label, err := clientutils.LabelField(payload)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to construct label field: %v", err)
+		}
+
+		cfg.Label = label
 	}
 
 	proposal := &market.DealProposal{
@@ -653,7 +664,7 @@ func (fc *FilClient) MakeDealUnsigned(
 		Client:       fc.ClientAddr,
 		Provider:     sp,
 
-		Label: label,
+		Label: cfg.Label,
 
 		StartEpoch: dealStart,
 		EndEpoch:   end,
