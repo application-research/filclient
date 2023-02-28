@@ -3,6 +3,7 @@ package filclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -94,7 +95,7 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 	for _, val := range expired {
 		// Get the active transfer associated with the auth token
 		activeXfer, err := m.dtServer.Get(val.ID)
-		if err != nil && !xerrors.Is(err, httptransport.ErrTransferNotFound) {
+		if err != nil && !errors.Is(err, httptransport.ErrTransferNotFound) {
 			log.Errorw("getting transfer", "id", val.ID, "err", err)
 			continue
 		}
@@ -104,7 +105,7 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 		if activeXfer != nil {
 			// Cancel the transfer
 			_, err := m.dtServer.CancelTransfer(ctx, val.ID)
-			if err != nil && !xerrors.Is(err, httptransport.ErrTransferNotFound) {
+			if err != nil && !errors.Is(err, httptransport.ErrTransferNotFound) {
 				log.Errorw("canceling transfer", "id", val.ID, "err", err)
 				continue
 			}
@@ -112,7 +113,7 @@ func (m *libp2pTransferManager) checkTransferExpiry(ctx context.Context) {
 
 		// Check if the transfer already completed
 		completedXfer, err := m.getCompletedTransfer(val.ID)
-		if err != nil && !xerrors.Is(err, datastore.ErrNotFound) {
+		if err != nil && !errors.Is(err, datastore.ErrNotFound) {
 			log.Errorw("getting completed transfer", "id", val.ID, "err", err)
 			continue
 		}
@@ -185,7 +186,7 @@ func (m *libp2pTransferManager) CleanupPreparedRequest(ctx context.Context, dbid
 	// Cancel any related transfer
 	dbidstr := fmt.Sprintf("%d", dbid)
 	_, cancelerr := m.dtServer.CancelTransfer(ctx, dbidstr)
-	if cancelerr != nil && xerrors.Is(cancelerr, httptransport.ErrTransferNotFound) {
+	if cancelerr != nil && errors.Is(cancelerr, httptransport.ErrTransferNotFound) {
 		// Ignore transfer not found error
 		cancelerr = nil
 	}
@@ -273,7 +274,7 @@ func (m *libp2pTransferManager) byId(id string) (*ChannelState, error) {
 		st := m.toDTState(xfer.State())
 		return &st, nil
 	}
-	if !xerrors.Is(err, httptransport.ErrTransferNotFound) {
+	if !errors.Is(err, httptransport.ErrTransferNotFound) {
 		return nil, err
 	}
 
@@ -363,7 +364,7 @@ func (m *libp2pTransferManager) toDTState(st boosttypes.TransferState) ChannelSt
 func (m *libp2pTransferManager) getCompletedTransfer(id string) (*boosttypes.TransferState, error) {
 	data, err := m.dtds.Get(m.ctx, datastore.NewKey(id))
 	if err != nil {
-		if xerrors.Is(err, datastore.ErrNotFound) {
+		if errors.Is(err, datastore.ErrNotFound) {
 			return nil, fmt.Errorf("getting transfer status for id '%s': %w", id, err)
 		}
 		return nil, fmt.Errorf("getting transfer status for id '%s' from datastore: %w", id, err)
