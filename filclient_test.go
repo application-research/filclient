@@ -267,7 +267,7 @@ func initEnsemble(t *testing.T, cctx *cli.Context) (*kit.TestFullNode, *kit.Test
 	fmt.Printf("Test client fullnode running on %s\n", client.ListenAddr)
 	os.Setenv("FULLNODE_API_INFO", client.ListenAddr.String())
 
-	client.WaitTillChain(cctx.Context, kit.BlockMinedBy(miner.ActorAddr))
+	client.WaitTillChain(cctx.Context, kit.BlocksMinedByAll(miner.ActorAddr))
 
 	// FilClient initialization
 	fmt.Printf("Initializing filclient...\n")
