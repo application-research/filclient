@@ -671,7 +671,7 @@ func (fc *FilClient) MakeDealUnsigned(
 		cfg.EndEpoch = cfg.StartEpoch + duration
 	}
 
-	if cfg.PricePerEpoch.IsZero() {
+	if cfg.PricePerEpoch.NilOrZero() {
 		cfg.PricePerEpoch = big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
 	}
 
