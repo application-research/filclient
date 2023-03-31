@@ -515,6 +515,9 @@ type DealConfig struct {
 	FastRetrieval bool
 	MinSize       abi.PaddedPieceSize
 	PieceInfo     DealPieceInfo
+	StartEpoch    abi.ChainEpoch
+	EndEpoch      abi.ChainEpoch
+	PricePerEpoch abi.TokenAmount
 }
 
 func DefaultDealConfig() DealConfig {
@@ -555,6 +558,24 @@ func DealWithMinSize(minSize abi.PaddedPieceSize) DealOption {
 func DealWithPieceInfo(pieceInfo DealPieceInfo) DealOption {
 	return func(cfg *DealConfig) {
 		cfg.PieceInfo = pieceInfo
+	}
+}
+
+func DealWithStartEpoch(startEpoch abi.ChainEpoch) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.StartEpoch = startEpoch
+	}
+}
+
+func DealWithEndEpoch(endEpoch abi.ChainEpoch) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.EndEpoch = endEpoch
+	}
+}
+
+func DealWithPricePerEpoch(pricePerEpoch abi.TokenAmount) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.PricePerEpoch = pricePerEpoch
 	}
 }
 
@@ -624,12 +645,18 @@ func (fc *FilClient) MakeDealWithOptions(
 	// set provider collateral 10% above minimum to avoid fluctuations causing deal failure
 	provCol := big.Div(big.Mul(collBounds.Min, big.NewInt(11)), big.NewInt(10))
 
-	// give miners a week to seal and commit the sector
-	dealStart := head.Height() + (epochsPerHour * 24 * 7)
+	if cfg.StartEpoch == 0 {
+		// give miners a week to seal and commit the sector
+		cfg.StartEpoch = head.Height() + (epochsPerHour * 24 * 7)
+	}
 
-	end := dealStart + duration
+	if cfg.EndEpoch == 0 {
+		cfg.EndEpoch = cfg.StartEpoch + duration
+	}
 
-	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
+	if cfg.PricePerEpoch.IsZero() {
+		cfg.PricePerEpoch = big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
+	}
 
 	label, err := clientutils.LabelField(payload)
 	if err != nil {
@@ -645,10 +672,10 @@ func (fc *FilClient) MakeDealWithOptions(
 
 		Label: label,
 
-		StartEpoch: dealStart,
-		EndEpoch:   end,
+		StartEpoch: cfg.StartEpoch,
+		EndEpoch:   cfg.EndEpoch,
 
-		StoragePricePerEpoch: pricePerEpoch,
+		StoragePricePerEpoch: cfg.PricePerEpoch,
 		ProviderCollateral:   provCol,
 		ClientCollateral:     big.Zero(),
 	}
