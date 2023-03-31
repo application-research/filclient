@@ -38,6 +38,7 @@ import (
 	"github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/go-state-types/builtin/v8/paych"
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
+	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/api"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -515,6 +516,8 @@ type DealConfig struct {
 	FastRetrieval bool
 	MinSize       abi.PaddedPieceSize
 	PieceInfo     DealPieceInfo
+	Signer        DealSigner // May be nil!
+	Label         market.DealLabel
 }
 
 func DefaultDealConfig() DealConfig {
@@ -558,20 +561,34 @@ func DealWithPieceInfo(pieceInfo DealPieceInfo) DealOption {
 	}
 }
 
+type DealSigner func(ctx context.Context, raw []byte) (*crypto.Signature, error)
+
+func DealWithSigner(signer DealSigner) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.Signer = signer
+	}
+}
+
+func DealWithLabel(label market.DealLabel) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.Label = label
+	}
+}
+
 func DealWithConfig(newCfg DealConfig) DealOption {
 	return func(cfg *DealConfig) {
 		*cfg = newCfg
 	}
 }
 
-func (fc *FilClient) MakeDealWithOptions(
+func (fc *FilClient) MakeDealUnsigned(
 	ctx context.Context,
 	sp address.Address,
 	payload cid.Cid,
 	price types.BigInt,
 	duration abi.ChainEpoch,
 	options ...DealOption,
-) (*network.Proposal, error) {
+) (*market.DealProposal, []byte, error) {
 	ctx, span := Tracer.Start(ctx, "makeDeal", trace.WithAttributes(
 		attribute.Stringer("sp", sp),
 		attribute.Stringer("price", price),
@@ -589,7 +606,7 @@ func (fc *FilClient) MakeDealWithOptions(
 	if cfg.PieceInfo.Cid == cid.Undef {
 		pieceCid, payloadSize, unpaddedPieceSize, err := fc.computePieceComm(ctx, payload, fc.blockstore)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		cfg.PieceInfo = DealPieceInfo{
@@ -602,7 +619,7 @@ func (fc *FilClient) MakeDealWithOptions(
 	if cfg.PieceInfo.Size < cfg.MinSize {
 		paddedPieceCid, err := ZeroPadPieceCommitment(cfg.PieceInfo.Cid, cfg.PieceInfo.Size.Unpadded(), cfg.MinSize.Unpadded())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		cfg.PieceInfo.Cid = paddedPieceCid
@@ -613,12 +630,12 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	head, err := fc.api.ChainHead(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, cfg.PieceInfo.Size, cfg.Verified, types.EmptyTSK)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// set provider collateral 10% above minimum to avoid fluctuations causing deal failure
@@ -631,9 +648,13 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(cfg.PieceInfo.Size)), price), big.NewInt(1<<30))
 
-	label, err := clientutils.LabelField(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to construct label field: %w", err)
+	if cfg.Label.Equals(market.EmptyDealLabel) {
+		label, err := clientutils.LabelField(payload)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to construct label field: %v", err)
+		}
+
+		cfg.Label = label
 	}
 
 	proposal := &market.DealProposal{
@@ -643,7 +664,7 @@ func (fc *FilClient) MakeDealWithOptions(
 		Client:       fc.ClientAddr,
 		Provider:     sp,
 
-		Label: label,
+		Label: cfg.Label,
 
 		StartEpoch: dealStart,
 		EndEpoch:   end,
@@ -655,11 +676,48 @@ func (fc *FilClient) MakeDealWithOptions(
 
 	raw, err := cborutil.Dump(proposal)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, raw, api.MsgMeta{Type: api.MTDealProposal})
+
+	return proposal, raw, err
+}
+
+func (fc *FilClient) MakeDealWithOptions(
+	ctx context.Context,
+	sp address.Address,
+	payload cid.Cid,
+	price types.BigInt,
+	duration abi.ChainEpoch,
+	options ...DealOption,
+) (*network.Proposal, error) {
+
+	cfg := DefaultDealConfig()
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	proposal, raw, err := fc.MakeDealUnsigned(ctx, sp, payload, price, duration, DealWithConfig(cfg))
 	if err != nil {
 		return nil, err
+	}
+
+	// Sign using the custom signer if provided in the options, or if not
+	// provided, use client's wallet to make the signature
+	var sig *crypto.Signature
+	if cfg.Signer != nil {
+		_sig, err := cfg.Signer(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
+
+		sig = _sig
+	} else {
+		_sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, raw, api.MsgMeta{Type: api.MTDealProposal})
+		if err != nil {
+			return nil, err
+		}
+
+		sig = _sig
 	}
 
 	sigprop := &market.ClientDealProposal{
