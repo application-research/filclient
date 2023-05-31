@@ -521,6 +521,7 @@ type DealConfig struct {
 	PricePerEpoch abi.TokenAmount
 	Signer        DealSigner // May be nil!
 	Label         market.DealLabel
+	TransferType  string
 }
 
 func DefaultDealConfig() DealConfig {
@@ -529,6 +530,7 @@ func DefaultDealConfig() DealConfig {
 		FastRetrieval: false,
 		MinSize:       0,
 		PieceInfo:     DealPieceInfo{},
+		TransferType:  storagemarket.TTGraphsync,
 	}
 }
 
@@ -593,6 +595,12 @@ func DealWithSigner(signer DealSigner) DealOption {
 func DealWithLabel(label market.DealLabel) DealOption {
 	return func(cfg *DealConfig) {
 		cfg.Label = label
+	}
+}
+
+func DealWithTransferType(transferType string) DealOption {
+	return func(cfg *DealConfig) {
+		cfg.TransferType = transferType
 	}
 }
 
@@ -755,7 +763,7 @@ func (fc *FilClient) MakeDealWithOptions(
 	return &network.Proposal{
 		DealProposal: sigprop,
 		Piece: &storagemarket.DataRef{
-			TransferType: storagemarket.TTGraphsync,
+			TransferType: cfg.TransferType,
 			Root:         payload,
 			RawBlockSize: cfg.PieceInfo.PayloadSize,
 		},
